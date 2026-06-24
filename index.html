@@ -317,13 +317,26 @@
   <div class="settings-panel" id="settingsPanel">
     <label class="settings-label">✦ 画質モード（速度↔画質）</label>
     <div class="quality-row" id="qualityRow">
-      <button class="quality-btn" data-q="fast" onclick="setImgQuality('fast')">⚡高速<small>turbo / 約6〜10秒</small></button>
-      <button class="quality-btn" data-q="balanced" onclick="setImgQuality('balanced')">⚖バランス<small>flux 768×1152</small></button>
-      <button class="quality-btn" data-q="hq" onclick="setImgQuality('hq')">💎高画質<small>flux 832×1216 +補正</small></button>
+      <button class="quality-btn" data-q="fast" onclick="setImgQuality('fast')">⚡高速<small>等倍・最速</small></button>
+      <button class="quality-btn" data-q="balanced" onclick="setImgQuality('balanced')">⚖バランス<small>約1536pxへ高品質化</small></button>
+      <button class="quality-btn" data-q="hq" onclick="setImgQuality('hq')">💎高画質<small>約2304px+鮮明化</small></button>
     </div>
     <div class="settings-hint" style="margin-bottom:14px">
-      高速=Flux2 Turbo（最速）／バランス=Flux標準（既定）／高画質=高解像度+プロンプト補正（最も綺麗だがやや遅い）。切替後は「再生成」で反映されます。
+      無料のPollinationsは元画像が約0.6MP(≈627×940)に制限されるため、バランス/高画質では<strong style="color:var(--gold)">受信後に高品質アップスケール</strong>して大きく保存します（高画質は鮮明化も実施）。ネイティブの高解像度が必要な場合は下のStable Horde APIキーを設定してください（Hordeは指定解像度で生成します）。切替後は「再生成」で反映されます。
     </div>
+    <label class="settings-label" style="margin-top:4px">✦ 最高品質モード（Pollinations APIキー）</label>
+    <div class="quality-row" id="pmodelRow">
+      <button class="quality-btn pmodel-btn" data-m="nanobanana-2" onclick="setPollinModel('nanobanana-2')">🍌 Nano Banana 2<small>Gemini 3.1 / 最高</small></button>
+      <button class="quality-btn pmodel-btn" data-m="seedream" onclick="setPollinModel('seedream')">🌊 Seedream<small>高品質</small></button>
+      <button class="quality-btn pmodel-btn" data-m="flux" onclick="setPollinModel('flux')">⚡ Flux<small>標準・安定</small></button>
+    </div>
+    <input class="settings-input" id="pollinKeyInput" type="text" placeholder="pk_... （Pollinations 公開鍵）" value="" style="margin-top:8px">
+    <div class="settings-hint" style="margin-bottom:14px">
+      📌 <a href="https://enter.pollinations.ai" target="_blank">enter.pollinations.ai</a> で無料登録し<strong>公開鍵(pk_)</strong>を取得→入力すると、Nano Banana 2 / Seedream など<strong style="color:var(--gold)">本物の高性能モデルがネイティブ高解像度・PNG（約2〜5MB）の最高品質</strong>で生成されます。<br>
+      ※ これらは Pollen クレジット消費（無料枠あり／高品質モデルは有料）。未入力時は無料の簡易モデル(約0.6MP＋自動拡大)で動作します。
+    </div>
+    <button class="settings-save-btn" onclick="savePollinKey()" style="margin-bottom:18px">💾 高品質キーを保存</button>
+
     <label class="settings-label">Stable Horde APIキー（無料登録で高速化）</label>
     <input class="settings-input" id="hordeKeyInput" type="text" placeholder="例: abc123xyz... （未入力=匿名キー）" value="">
     <div class="settings-hint">
@@ -1313,6 +1326,26 @@ function getHordeKey() {
   catch(e) { return HORDE_ANON; }
 }
 
+// ── Pollinations 高品質ルート（APIキー認証） ──
+function getPollinKey() {
+  try { return (localStorage.getItem('lg_pollinkey') || '').trim(); } catch(e) { return ''; }
+}
+const POLLIN_MODELS = { 'nanobanana-2':'Nano Banana 2', 'seedream':'Seedream', 'flux':'Flux' };
+function getPollinModel() {
+  try { return localStorage.getItem('lg_pollinmodel') || 'flux'; } catch(e) { return 'flux'; }
+}
+function setPollinModel(m) {
+  if(!POLLIN_MODELS[m]) m = 'flux';
+  try { localStorage.setItem('lg_pollinmodel', m); } catch(e){}
+  document.querySelectorAll('.pmodel-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+}
+function savePollinKey() {
+  const k = (document.getElementById('pollinKeyInput').value || '').trim();
+  try { if(k) localStorage.setItem('lg_pollinkey', k); else localStorage.removeItem('lg_pollinkey'); } catch(e){}
+  alert(k ? '✅ 高品質キーを保存しました（Nano Banana 2 等が利用可能に）' : '✅ キーを削除しました（無料モデルに戻ります）');
+}
+const KEYED_SIZE = { fast:[1024,1536], balanced:[1280,1920], hq:[1536,2304] };
+
 const ANIME_MODELS = ['Anything Diffusion','Anything v5','anything-v5'];
 const REAL_MODELS  = ['Realistic Vision','AbsoluteReality','Deliberate'];
 
@@ -1382,10 +1415,19 @@ function setImgQuality(q) {
 }
 
 function buildPollinationsUrl(promptData, seed) {
-  const q = IMG_QUALITY_PRESETS[getImgQuality()] || IMG_QUALITY_PRESETS.balanced;
+  const ql = getImgQuality();
+  const q = IMG_QUALITY_PRESETS[ql] || IMG_QUALITY_PRESETS.balanced;
   const prompt = promptData.prompt || '';
   const trimmed = prompt.length > 350 ? prompt.slice(0, 350) : prompt;
   const encoded = encodeURIComponent(trimmed);
+  const pk = getPollinKey();
+  if(pk) {
+    const model = getPollinModel();
+    const sz = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
+    return `https://gen.pollinations.ai/image/${encoded}`
+         + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
+         + `&nofeed=true&safe=true&key=${encodeURIComponent(pk)}`;
+  }
   let url = `https://image.pollinations.ai/prompt/${encoded}`
           + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
           + `&nologo=true&nofeed=true&private=true`;
@@ -1409,6 +1451,66 @@ function convertImageToBase64(src, imgEl) {
 }
 
 // ── 完成画像をUIへ反映し、履歴保存・pending解除（共通処理）──
+// ════════════════════════════════════════════════════════════
+//  高品質アップスケール
+//  無認証Pollinationsは小型モデル(sana)で約0.6MP(≈627x940)に固定される。
+//  幸いCORSが許可されているので、受信画像をcanvasで目標解像度へ高品質拡大し、
+//  HQでは軽いシャープ処理で鮮明化して保存・表示する。
+// ════════════════════════════════════════════════════════════
+function upscaleTargetH(quality) {
+  if(quality === 'hq')       return 2304; // 縦(長辺)目標px
+  if(quality === 'balanced') return 1536;
+  return 0;                                // fast = 等倍
+}
+function sharpenCanvas(ctx, w, h, k) {
+  try {
+    const srcD = ctx.getImageData(0,0,w,h), d = srcD.data;
+    const outD = ctx.createImageData(w,h),  o = outD.data;
+    const idx = (x,y) => ((y*w+x)<<2);
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+      const i = idx(x,y);
+      if(x===0||y===0||x===w-1||y===h-1){ o[i]=d[i];o[i+1]=d[i+1];o[i+2]=d[i+2];o[i+3]=d[i+3]; continue; }
+      for(let c=0;c<3;c++){
+        const v = d[i+c]*(1+4*k)
+                - k*(d[idx(x-1,y)+c]+d[idx(x+1,y)+c]+d[idx(x,y-1)+c]+d[idx(x,y+1)+c]);
+        o[i+c] = v<0?0:v>255?255:v;
+      }
+      o[i+3]=d[i+3];
+    }
+    ctx.putImageData(outD,0,0);
+  } catch(e) {}
+}
+function upscaleToDataURL(imgEl, quality) {
+  const nw = imgEl.naturalWidth||0, nh = imgEl.naturalHeight||0;
+  if(!nw || !nh) return null;
+  const targetH = upscaleTargetH(quality);
+  if(!targetH || nh >= targetH) return null; // 等倍 or 既に十分大きい
+  const scale = targetH / nh;
+  const tw = Math.round(nw*scale), th = Math.round(nh*scale);
+  // 2段階拡大でにじみを抑制
+  const midScale = Math.sqrt(scale);
+  const mw = Math.round(nw*midScale), mh = Math.round(nh*midScale);
+  const mid = document.createElement('canvas'); mid.width=mw; mid.height=mh;
+  const mctx = mid.getContext('2d'); mctx.imageSmoothingEnabled=true; mctx.imageSmoothingQuality='high';
+  mctx.drawImage(imgEl,0,0,mw,mh);
+  const cv = document.createElement('canvas'); cv.width=tw; cv.height=th;
+  const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+  ctx.drawImage(mid,0,0,tw,th);
+  if(quality === 'hq') sharpenCanvas(ctx, tw, th, 0.55);
+  return cv.toDataURL('image/jpeg', 0.92);
+}
+function makeThumb(imgEl) {
+  try {
+    const nw = imgEl.naturalWidth||768, nh = imgEl.naturalHeight||1152;
+    const sc = Math.min(1, 768/nw);
+    const w = Math.round(nw*sc), h = Math.round(nh*sc);
+    const cv = document.createElement('canvas'); cv.width=w; cv.height=h;
+    const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+    ctx.drawImage(imgEl,0,0,w,h);
+    return cv.toDataURL('image/jpeg', 0.82);
+  } catch(e) { return null; }
+}
+
 function finishWithImage(src, winner, promptData) {
   stopAll();
   const img      = document.getElementById('mainImg');
@@ -1417,22 +1519,53 @@ function finishWithImage(src, winner, promptData) {
   const dlBtn    = document.getElementById('dlBtn');
   const regenBtn = document.getElementById('regenBtn');
   const hint     = document.getElementById('loadingPromptHint');
-  currentImageUrl = src;
-  isGenerating    = false;
+  isGenerating = false;
   clearPending();
-  img.onload = () => {
-    img.classList.add('loaded');
-    if(loading) loading.classList.add('hidden');
-    if(errorDiv) errorDiv.style.display = 'none';
-    if(dlBtn) dlBtn.disabled = false;
-    if(regenBtn) regenBtn.disabled = false;
-    if(hint) hint.textContent = `✦ 生成完了！(${winner})`;
-    convertImageToBase64(src, img)
-      .then(data => saveToHistory(promptData, data))
-      .catch(() => saveToHistory(promptData, src));
+  const quality = (promptData && promptData.quality) || getImgQuality();
+
+  const show = (displayUrl, saveData, label) => {
+    currentImageUrl = displayUrl;
+    img.onload = () => {
+      img.classList.add('loaded');
+      if(loading) loading.classList.add('hidden');
+      if(errorDiv) errorDiv.style.display = 'none';
+      if(dlBtn) dlBtn.disabled = false;
+      if(regenBtn) regenBtn.disabled = false;
+      if(hint) hint.textContent = `✦ 生成完了！(${label})`;
+    };
+    img.onerror = () => { if(loading) loading.classList.add('hidden'); };
+    img.src = displayUrl;
+    saveToHistory(promptData, saveData);
   };
-  img.onerror = () => { if(loading) loading.classList.add('hidden'); };
-  img.src = src;
+
+  // 受信画像をオフスクリーンで読み込み → 必要なら高品質アップスケール
+  const keyed = !!(promptData && promptData.keyed);
+  const off = new Image(); off.crossOrigin = 'anonymous';
+  off.onload = () => {
+    let displayUrl = src, thumb = null;
+    try {
+      if(keyed) {
+        // 本物の高性能モデル出力 → PNGでフル保存（約2〜5MB・最高品質を保持）
+        const cv = document.createElement('canvas');
+        cv.width = off.naturalWidth || 1024; cv.height = off.naturalHeight || 1536;
+        cv.getContext('2d').drawImage(off,0,0);
+        displayUrl = cv.toDataURL('image/png');
+      } else {
+        const up = upscaleToDataURL(off, quality);
+        if(up) displayUrl = up;
+        else {
+          const cv = document.createElement('canvas');
+          cv.width = off.naturalWidth||768; cv.height = off.naturalHeight||1152;
+          cv.getContext('2d').drawImage(off,0,0);
+          displayUrl = cv.toDataURL('image/jpeg', 0.92);
+        }
+      }
+      thumb = makeThumb(off);
+    } catch(e) { displayUrl = src; thumb = null; }
+    show(displayUrl, thumb || displayUrl, winner);
+  };
+  off.onerror = () => { show(src, src, winner); };
+  off.src = src;
 }
 
 // ── Hordeジョブのポーリング（初回・再開の両方で再利用）──
@@ -1518,6 +1651,8 @@ function generateImage(promptData, seed) {
   img.onload = null; img.onerror = null; img.src = '';
   dlBtn.disabled = true; regenBtn.disabled = true;
   isGenerating = true;
+  promptData.quality = getImgQuality(); // アップスケール判定用
+  promptData.keyed   = !!getPollinKey(); // 高品質(認証)ルート判定用
   document.getElementById('promptText').textContent = promptData.prompt;
   document.getElementById('themeLabel').textContent =
     `${promptData.elemLabel || (promptData.theme||'').split('・')[0]} × ${promptData.style === 'anime' ? 'アニメ調' : 'リアル調'}`;
@@ -1603,6 +1738,7 @@ function resumePendingGeneration() {
   if(regenBtn) regenBtn.disabled = true;
   if(hint)     hint.textContent = '✦ 前回の生成を回収中…';
   const pd = p.promptData || {};
+  if(p.quality) pd.quality = p.quality; // アップスケール判定用に復元
   if(pd.prompt) document.getElementById('promptText').textContent = pd.prompt;
 
   let done = false;
@@ -1651,7 +1787,8 @@ function resumePendingGeneration() {
 function downloadImage() {
   if(!currentImageUrl) return;
   const d = currentDiv ? currentDiv.now : new Date();
-  const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.jpg`;
+  const ext = (currentImageUrl && currentImageUrl.startsWith('data:image/png')) ? 'png' : 'jpg';
+  const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.${ext}`;
   const img = document.getElementById('mainImg');
 
   if(currentImageUrl.startsWith('data:')) {
@@ -1832,8 +1969,9 @@ function toggleSettings() {
   const panel = document.getElementById('settingsPanel');
   panel.classList.toggle('open');
   if(panel.classList.contains('open')) {
-    try { document.getElementById('hordeKeyInput').value = localStorage.getItem('lg_hordekey') || ''; }
-    catch(e){}
+    try { document.getElementById('hordeKeyInput').value = localStorage.getItem('lg_hordekey') || ''; } catch(e){}
+    try { document.getElementById('pollinKeyInput').value = localStorage.getItem('lg_pollinkey') || ''; } catch(e){}
+    setPollinModel(getPollinModel());
   }
 }
 
@@ -1877,6 +2015,7 @@ function closeModal(e) {
 function init() {
   initStyleUI();
   setImgQuality(getImgQuality());
+  setPollinModel(getPollinModel());
 
   try {
     const div = computeToday();

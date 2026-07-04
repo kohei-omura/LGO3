@@ -803,6 +803,8 @@ let currentDiv        = null;
 let currentPromptData = null;
 let currentImageUrl   = null;
 let isGenerating      = false;
+let GEN_TOKEN         = 0;   // 世代トークン：最新の生成のみ finish を許可（二重finish防止）
+let histRenderCount   = 30;  // 履歴の初期表示件数（「もっと見る」で+30）
 let currentStyle = 'anime';
 let freeStyle    = 'anime';
 try {
@@ -1289,7 +1291,23 @@ function deleteHistoryEntry(id) {
   });
 }
 
+// 再描画を伴わない静かな削除（200件超の自動整理用）
+function deleteHistoryQuiet(id) {
+  return openDB().then(db => new Promise(res => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+    tx.oncomplete = () => res();
+    tx.onerror    = () => res();
+  }));
+}
+
+function showMoreHistory() {
+  histRenderCount += 30;
+  renderHistory();
+}
+
 const MODE_LABEL = { oracle:'🔮 占い', custom:'✍️ フリー', img2img:'🖼️ 画像参照' };
+const HISTORY_MAX = 200; // これを超えた古い履歴はIndexedDBから物理削除
 
 function renderHistory() {
   loadHistory().then(history => {
@@ -1298,7 +1316,15 @@ function renderHistory() {
       grid.innerHTML = '<div class="no-history" style="grid-column:1/-1">まだ履歴がありません<br><small>画像が生成されると保存されます</small></div>';
       return;
     }
-    grid.innerHTML = history.map(h => {
+    // 欠陥4: 200件超は古い順（配列末尾＝savedAt昇順で古い）に物理削除
+    if(history.length > HISTORY_MAX) {
+      const excess = history.slice(HISTORY_MAX);
+      console.info(`[LGO] 履歴が${HISTORY_MAX}件を超えたため、古い順に${excess.length}件を削除します`);
+      excess.forEach(h => deleteHistoryQuiet(h.id));
+      history = history.slice(0, HISTORY_MAX);
+    }
+    const shown = history.slice(0, histRenderCount);
+    let html = shown.map(h => {
       const label = h.date ? h.date.slice(5).replace('-','/') : '—';
       const mode  = MODE_LABEL[h.mode] || '';
       return `
@@ -1311,6 +1337,12 @@ function renderHistory() {
         <button class="hist-del" onclick="event.stopPropagation();deleteHistoryEntry('${h.id}')">×</button>
       </div>`;
     }).join('');
+    // 欠陥4: 未表示分がある場合のみ「もっと見る」を表示（初期30件・以降+30）
+    if(history.length > histRenderCount) {
+      const rest = history.length - histRenderCount;
+      html += `<button onclick="showMoreHistory()" style="grid-column:1/-1;margin-top:4px;padding:11px;background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.32);border-radius:12px;color:var(--violet);font-size:.76rem;font-weight:700;cursor:pointer;letter-spacing:.06em">▽ もっと見る（残り${rest}件）</button>`;
+    }
+    grid.innerHTML = html;
   }).catch(e => console.warn('renderHistory:', e));
 }
 
@@ -1511,8 +1543,22 @@ function makeThumb(imgEl) {
   } catch(e) { return null; }
 }
 
-function finishWithImage(src, winner, promptData) {
+// 勝者確定時に残存Hordeジョブをサーバー側キャンセル（kudos/キュー浪費防止・fire&forget）
+function cancelHordeJob(jobId) {
+  if(!jobId) return;
+  try {
+    fetch(`${HORDE_API}/generate/status/${jobId}`, { method:'DELETE', headers:{'Client-Agent':CLIENT_AGENT} })
+      .catch(() => {});
+  } catch(e) {}
+}
+
+function finishWithImage(src, winner, promptData, token) {
+  // 世代トークン不一致＝古い（敗者側の）呼び出し → 破棄して二重finishを防ぐ
+  if(token !== GEN_TOKEN) return;
   stopAll();
+  // 勝者はこの1回のみ。Hordeが敗者側で走っていればサーバージョブをキャンセル
+  if(hordeJobId && winner !== 'Stable Horde') cancelHordeJob(hordeJobId);
+  hordeJobId = null;
   const img      = document.getElementById('mainImg');
   const loading  = document.getElementById('loadingOverlay');
   const errorDiv = document.getElementById('errorState');
@@ -1522,6 +1568,7 @@ function finishWithImage(src, winner, promptData) {
   isGenerating = false;
   clearPending();
   const quality = (promptData && promptData.quality) || getImgQuality();
+  const recovered = promptData && promptData._recovered ? promptData._recovered : null;
 
   const show = (displayUrl, saveData, label) => {
     currentImageUrl = displayUrl;
@@ -1531,11 +1578,20 @@ function finishWithImage(src, winner, promptData) {
       if(errorDiv) errorDiv.style.display = 'none';
       if(dlBtn) dlBtn.disabled = false;
       if(regenBtn) regenBtn.disabled = false;
-      if(hint) hint.textContent = `✦ 生成完了！(${label})`;
+      if(hint) hint.textContent = recovered ? '✦ 昨日の未回収分を保存しました' : `✦ 生成完了！(${label})`;
     };
-    img.onerror = () => { if(loading) loading.classList.add('hidden'); };
+    img.onerror = () => {
+      console.warn('[LGO] 画像の表示に失敗しました:', displayUrl);
+      if(loading) loading.classList.add('hidden');
+      if(regenBtn) regenBtn.disabled = false;
+      if(dlBtn) dlBtn.disabled = true;
+      if(errorDiv) {
+        errorDiv.innerHTML = '<div class="error-icon">🌙</div><div class="error-msg">画像の表示に失敗しました<br><small>「再生成」を押してください</small></div>';
+        errorDiv.style.display = 'flex';
+      }
+    };
     img.src = displayUrl;
-    saveToHistory(promptData, saveData);
+    saveToHistory(promptData, saveData, recovered);
   };
 
   // 受信画像をオフスクリーンで読み込み → 必要なら高品質アップスケール
@@ -1569,7 +1625,7 @@ function finishWithImage(src, winner, promptData) {
 }
 
 // ── Hordeジョブのポーリング（初回・再開の両方で再利用）──
-function pollHordeJob(jobId, promptData, onFail) {
+function pollHordeJob(jobId, promptData, onFail, token) {
   const hint = document.getElementById('loadingPromptHint');
   hordeJobId = jobId;
   let waitSecs = 0;
@@ -1588,7 +1644,7 @@ function pollHordeJob(jobId, promptData, onFail) {
               const gen = result.generations?.[0];
               if(!gen?.img) { onFail && onFail('生成失敗（Horde）'); return; }
               const src = gen.img.startsWith('http') ? gen.img : `data:image/webp;base64,${gen.img}`;
-              finishWithImage(src, 'Stable Horde', promptData);
+              finishWithImage(src, 'Stable Horde', promptData, token);
             })
             .catch(() => onFail && onFail('Horde受信エラー'));
         } else if(status.faulted) {
@@ -1607,7 +1663,7 @@ function pollHordeJob(jobId, promptData, onFail) {
 }
 
 // ── Hordeジョブ投入（投入後すぐ pending に jobId を記録）──
-function submitHorde(promptData, onFail) {
+function submitHorde(promptData, onFail, token) {
   const apiKey = getHordeKey();
   const models = promptData.style === 'anime' ? ANIME_MODELS : REAL_MODELS;
   const qh = (IMG_QUALITY_PRESETS[getImgQuality()] || IMG_QUALITY_PRESETS.balanced).horde;
@@ -1627,7 +1683,7 @@ function submitHorde(promptData, onFail) {
   .then(data => {
     if(!data.id) throw new Error('no job id');
     patchPending({ hordeJobId: data.id });
-    pollHordeJob(data.id, promptData, onFail);
+    pollHordeJob(data.id, promptData, onFail, token);
   })
   .catch(e => { console.warn('Horde submit:', e); onFail && onFail('Horde接続に失敗しました'); });
 }
@@ -1657,6 +1713,7 @@ function generateImage(promptData, seed) {
   document.getElementById('themeLabel').textContent =
     `${promptData.elemLabel || (promptData.theme||'').split('・')[0]} × ${promptData.style === 'anime' ? 'アニメ調' : 'リアル調'}`;
 
+  const genToken = ++GEN_TOKEN; // この生成の世代トークン
   const pollinUrl = buildPollinationsUrl(promptData, seed);
   const dateKey = currentDiv
     ? `${currentDiv.now.getFullYear()}-${String(currentDiv.now.getMonth()+1).padStart(2,'0')}-${String(currentDiv.now.getDate()).padStart(2,'0')}`
@@ -1676,7 +1733,7 @@ function generateImage(promptData, seed) {
     errorDiv.style.display = 'flex';
     // pending はあえて残す（次回起動/復帰時に回収を試みる）
   };
-  const win = (src, winner) => { if(done) return; done = true; finishWithImage(src, winner, promptData); };
+  const win = (src, winner) => { if(done) return; done = true; finishWithImage(src, winner, promptData, genToken); };
 
   let secs = 0;
   secTimer = setInterval(() => {
@@ -1691,13 +1748,13 @@ function generateImage(promptData, seed) {
   pollinImg.crossOrigin = 'anonymous';
   pollinImg.onload  = () => { if(!done) win(pollinUrl, 'Pollinations'); };
   pollinImg.onerror = () => {
-    if(!done && !hordeJobId) { hint.textContent = '✦ Hordeに切替中…'; submitHorde(promptData, onFail); }
+    if(!done && !hordeJobId) { hint.textContent = '✦ Hordeに切替中…'; submitHorde(promptData, onFail, genToken); }
   };
   pollinImg.src = pollinUrl;
 
   // ② 18秒で未完了なら Horde も並行起動（保険）
   pollinTimer = setTimeout(() => {
-    if(!done && !hordeJobId) { hint.textContent = '✦ Horde も生成開始…'; submitHorde(promptData, onFail); }
+    if(!done && !hordeJobId) { hint.textContent = '✦ Horde も生成開始…'; submitHorde(promptData, onFail, genToken); }
   }, 18000);
 }
 
@@ -1737,8 +1794,15 @@ function resumePendingGeneration() {
   if(dlBtn)    dlBtn.disabled = true;
   if(regenBtn) regenBtn.disabled = true;
   if(hint)     hint.textContent = '✦ 前回の生成を回収中…';
+  const genToken = ++GEN_TOKEN; // 回収も1世代として扱う
   const pd = p.promptData || {};
   if(p.quality) pd.quality = p.quality; // アップスケール判定用に復元
+  // 欠陥3: 別日(昨日)のpendingを回収した場合は、その日の日付で保存する
+  const _today = new Date();
+  const _todayKey = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
+  if(p.dateKey && p.dateKey !== _todayKey) {
+    pd._recovered = { date: p.dateKey, recovered: true, score: null, rokuyo: null };
+  }
   if(pd.prompt) document.getElementById('promptText').textContent = pd.prompt;
 
   let done = false;
@@ -1753,7 +1817,7 @@ function resumePendingGeneration() {
     }
     clearPending();
   };
-  const win = (src, w) => { if(done) return; done = true; finishWithImage(src, w, pd); };
+  const win = (src, w) => { if(done) return; done = true; finishWithImage(src, w, pd, genToken); };
 
   let secs = 0;
   secTimer = setInterval(() => {
@@ -1774,7 +1838,7 @@ function resumePendingGeneration() {
   if(p.hordeJobId) {
     if(hint) hint.textContent = '✦ Horde の結果を回収中…';
     // Horde回収を試み、失敗したらPollinationsへフォールバック
-    pollHordeJob(p.hordeJobId, pd, () => { if(!done) tryPollin(); });
+    pollHordeJob(p.hordeJobId, pd, () => { if(!done) tryPollin(); }, genToken);
   } else {
     tryPollin();
   }
@@ -1922,6 +1986,7 @@ function generateImg2ImgWithHorde(promptData, strength, sourceBase64) {
   document.getElementById('promptText').textContent = promptData.prompt;
   document.getElementById('themeLabel').textContent = '🖼️ 画像参照生成';
 
+  const genToken = ++GEN_TOKEN;
   const rawB64 = sourceBase64.replace(/^data:image\/[^;]+;base64,/, '');
   const apiKey = getHordeKey();
   hint.textContent = '✦ 参照画像送信中…';
@@ -1957,7 +2022,7 @@ function generateImg2ImgWithHorde(promptData, strength, sourceBase64) {
     if(!data.id) throw new Error('no id');
     patchPending({ hordeJobId: data.id });
     hint.textContent = '✦ img2img キュー待ち…';
-    pollHordeJob(data.id, promptData, onFail);
+    pollHordeJob(data.id, promptData, onFail, genToken);
   })
   .catch(e => { console.warn('img2img submit:', e); onFail('接続エラー'); });
 }
@@ -2036,13 +2101,18 @@ function init() {
     if(resumePendingGeneration()) return;
     const todayEntry = all.find(h => h.date === todayKey && h.mode === 'oracle');
     if(todayEntry && todayEntry.imageData) {
+      // 機能3-A: 当日生成済みなら通信ゼロで即表示（再生成ボタンは有効のまま）
       const img     = document.getElementById('mainImg');
       const loading = document.getElementById('loadingOverlay');
+      const hint    = document.getElementById('loadingPromptHint');
+      const regenBtn= document.getElementById('regenBtn');
       currentImageUrl = todayEntry.imageData;
       img.onload = () => {
         img.classList.add('loaded');
         loading.classList.add('hidden');
         document.getElementById('dlBtn').disabled = false;
+        if(regenBtn) regenBtn.disabled = false;
+        if(hint) hint.textContent = '✦ 本日の一枚（生成済み）';
       };
       img.onerror = () => {
         generateImage(promptData, getDailySeed(currentDiv));

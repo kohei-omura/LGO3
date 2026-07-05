@@ -90,13 +90,13 @@
   .fb-value.rose { color: var(--rose); }
   .fb-value.violet { color: var(--violet); }
   .fb-value.green { color: var(--green); }
-  .image-card { background: linear-gradient(145deg, rgba(26,23,48,.9), rgba(18,16,42,.95)); border: 1px solid var(--border); border-radius: 24px; overflow: hidden; margin-bottom: 20px; position: relative; }
+  .image-card { background: linear-gradient(145deg, rgba(26,23,48,.9), rgba(18,16,42,.95)); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin: 0 -16px 8px; position: relative; }
   .image-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
   .image-header-left { display: flex; align-items: center; gap: 8px; }
   .image-header-label { font-family: 'Cinzel Decorative', serif; font-size: .6rem; letter-spacing: .2em; color: var(--gold); }
   .image-theme-badge { font-size: .68rem; background: rgba(232,201,106,.12); border: 1px solid rgba(232,201,106,.25); color: var(--gold); padding: 2px 10px; border-radius: 20px; }
   .image-wrap { position: relative; width: 100%; min-height: 400px; background: linear-gradient(180deg, rgba(30,20,50,.8) 0%, rgba(10,8,25,.9) 100%); display: flex; align-items: center; justify-content: center; }
-  .main-image { width: 100%; max-height: 520px; object-fit: cover; display: block; opacity: 0; transition: opacity .8s ease; }
+  .main-image { width: 100%; max-height: 78vh; object-fit: contain; background: var(--deep); display: block; opacity: 0; transition: opacity .8s ease; }
   .main-image.loaded { opacity: 1; }
   .loading-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: rgba(13,11,26,.85); transition: opacity .5s ease; }
   .loading-overlay.hidden { opacity: 0; pointer-events: none; }
@@ -142,7 +142,7 @@
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
   .modal-overlay.open { display: flex; }
   .modal-inner { max-width: 420px; width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
-  .modal-img { width: 100%; display: block; }
+  .modal-img { width: 100%; display: block; max-height: 85vh; object-fit: contain; }
   .modal-info { padding: 14px 16px; }
   .modal-date { font-size: .7rem; color: var(--gold); margin-bottom: 4px; }
   .modal-theme { font-size: .75rem; color: var(--muted); margin-bottom: 10px; }
@@ -336,6 +336,12 @@
       ※ これらは Pollen クレジット消費（無料枠あり／高品質モデルは有料）。未入力時は無料の簡易モデル(約0.6MP＋自動拡大)で動作します。
     </div>
     <button class="settings-save-btn" onclick="savePollinKey()" style="margin-bottom:18px">💾 高品質キーを保存</button>
+
+    <label class="settings-label" style="margin-top:4px">✦ セーフティ設定</label>
+    <button id="safeModeBtn" class="quality-btn" onclick="setSafeMode(!getSafeMode())" style="width:100%;margin-bottom:6px">🛡 セーフティ強化：OFF</button>
+    <div class="settings-hint" style="margin-bottom:18px">
+      通常はOFF推奨。ONにすると強めの検閲フィルタ（safe）が入り、人物系の指定が除外され<strong style="color:var(--gold)">背景だけの画像になる</strong>ことがあります。生成プロンプトは健全な内容のみのため、既定OFFで問題ありません。切替後は「再生成」で反映されます。
+    </div>
 
     <label class="settings-label">Stable Horde APIキー（無料登録で高速化）</label>
     <input class="settings-input" id="hordeKeyInput" type="text" placeholder="例: abc123xyz... （未入力=匿名キー）" value="">
@@ -802,6 +808,9 @@ const LUCKY_COLORS = {
 let currentDiv        = null;
 let currentPromptData = null;
 let currentImageUrl   = null;
+let currentBlob       = null;  // 保存用に事前準備した Blob
+let currentFile       = null;  // navigator.share 用の File
+let currentObjUrl     = null;  // <a download> 用の ObjectURL
 let isGenerating      = false;
 let GEN_TOKEN         = 0;   // 世代トークン：最新の生成のみ finish を許可（二重finish防止）
 let histRenderCount   = 30;  // 履歴の初期表示件数（「もっと見る」で+30）
@@ -1362,6 +1371,15 @@ function getHordeKey() {
 function getPollinKey() {
   try { return (localStorage.getItem('lg_pollinkey') || '').trim(); } catch(e) { return ''; }
 }
+// 🛡 セーフティ強化モード（既定OFF）。ONの時だけ keyed URL に safe=true を付与
+function getSafeMode() {
+  try { return localStorage.getItem('lg_safemode') === '1'; } catch(e) { return false; }
+}
+function setSafeMode(on) {
+  try { if(on) localStorage.setItem('lg_safemode','1'); else localStorage.removeItem('lg_safemode'); } catch(e){}
+  const b = document.getElementById('safeModeBtn');
+  if(b) { b.classList.toggle('active', on); b.textContent = on ? '🛡 セーフティ強化：ON' : '🛡 セーフティ強化：OFF'; }
+}
 const POLLIN_MODELS = { 'nanobanana-2':'Nano Banana 2', 'seedream':'Seedream', 'flux':'Flux' };
 function getPollinModel() {
   try { return localStorage.getItem('lg_pollinmodel') || 'flux'; } catch(e) { return 'flux'; }
@@ -1456,9 +1474,11 @@ function buildPollinationsUrl(promptData, seed) {
   if(pk) {
     const model = getPollinModel();
     const sz = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
-    return `https://gen.pollinations.ai/image/${encoded}`
+    let kurl = `https://gen.pollinations.ai/image/${encoded}`
          + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
-         + `&nofeed=true&safe=true&key=${encodeURIComponent(pk)}`;
+         + `&nofeed=true&nologo=true&key=${encodeURIComponent(pk)}`;
+    if(getSafeMode()) kurl += '&safe=true'; // 🛡セーフティ強化モードON時のみ付与（人物検閲を回避）
+    return kurl;
   }
   let url = `https://image.pollinations.ai/prompt/${encoded}`
           + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
@@ -1572,6 +1592,7 @@ function finishWithImage(src, winner, promptData, token) {
 
   const show = (displayUrl, saveData, label) => {
     currentImageUrl = displayUrl;
+    prepareSaveData(displayUrl); // ★ 保存用データをバックグラウンドで事前準備（iOS同期click対策）
     img.onload = () => {
       img.classList.add('loaded');
       if(loading) loading.classList.add('hidden');
@@ -1860,34 +1881,63 @@ function resumePendingGeneration() {
 // ════════════════════════════════════════
 //  DOWNLOAD
 // ════════════════════════════════════════
+// 保存用データの事前準備（表示確定時に非同期で実行 → クリック時は同期で保存可能に）
+function prepareSaveData(url) {
+  if(currentObjUrl) { try { URL.revokeObjectURL(currentObjUrl); } catch(e){} }
+  currentBlob = null; currentFile = null; currentObjUrl = null;
+  if(!url) return;
+  const d = currentDiv ? currentDiv.now : new Date();
+  const ext  = url.startsWith('data:image/png') ? 'png' : 'jpg';
+  const type = ext === 'png' ? 'image/png' : 'image/jpeg';
+  const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.${ext}`;
+  try {
+    fetch(url)
+      .then(r => r.blob())
+      .then(blob => {
+        currentBlob   = blob;
+        currentObjUrl = URL.createObjectURL(blob);
+        try { currentFile = new File([blob], fname, { type: blob.type || type }); } catch(e) { currentFile = null; }
+      })
+      .catch(() => {});
+  } catch(e) {}
+}
+
+function showToast(msg) {
+  try {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:32px;transform:translateX(-50%);max-width:88%;text-align:center;background:rgba(20,17,40,.96);color:#f0eaff;border:1px solid rgba(167,139,250,.4);border-radius:12px;padding:10px 18px;font-size:.78rem;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,.5)';
+    document.body.appendChild(t);
+    setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 2200);
+  } catch(e) {}
+}
+
 function downloadImage() {
-  if(!currentImageUrl) return;
+  if(!currentImageUrl && !currentObjUrl) return;
   const d = currentDiv ? currentDiv.now : new Date();
   const ext = (currentImageUrl && currentImageUrl.startsWith('data:image/png')) ? 'png' : 'jpg';
   const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.${ext}`;
-  const img = document.getElementById('mainImg');
 
-  if(currentImageUrl.startsWith('data:')) {
+  // ① 事前準備済みFileがあり共有可能 → 共有シート（iPhoneで「画像を保存」可能・最良UX）
+  if(currentFile && navigator.canShare && navigator.canShare({ files: [currentFile] })) {
+    navigator.share({ files: [currentFile] }).catch(() => {});
+    return;
+  }
+  // ② 事前準備済みObjectURL → 同期click（非同期を挟まない）
+  if(currentObjUrl) {
+    const a = document.createElement('a');
+    a.download = fname; a.href = currentObjUrl; a.click();
+    return;
+  }
+  // ③ data: URLならそのまま同期click
+  if(currentImageUrl && currentImageUrl.startsWith('data:')) {
     const a = document.createElement('a');
     a.download = fname; a.href = currentImageUrl; a.click();
     return;
   }
-
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width  = img.naturalWidth  || 768;
-    canvas.height = img.naturalHeight || 1152;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    canvas.toBlob(blob => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.download = fname; a.href = url; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }, 'image/jpeg', 0.9);
-  } catch(e) {
-    window.open(currentImageUrl, '_blank');
-  }
+  // ④ 準備未完了 → フォールバック＋案内
+  if(currentImageUrl) window.open(currentImageUrl, '_blank');
+  showToast('準備中です。1〜2秒後にもう一度お試しください');
 }
 
 // ════════════════════════════════════════
@@ -2049,6 +2099,7 @@ function toggleSettings() {
     try { document.getElementById('hordeKeyInput').value = localStorage.getItem('lg_hordekey') || ''; } catch(e){}
     try { document.getElementById('pollinKeyInput').value = localStorage.getItem('lg_pollinkey') || ''; } catch(e){}
     setPollinModel(getPollinModel());
+    setSafeMode(getSafeMode());
   }
 }
 

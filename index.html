@@ -1487,6 +1487,22 @@ function buildPollinationsUrl(promptData, seed) {
   return url;
 }
 
+// キー付き取得: <img>はAuthorizationヘッダーを送れないため fetch+Bearer で認証する。
+// これで sk_/pk_ が正しく認証され、gen側が指定サイズ（縦長）を反映。blob化で毎回別画像になりループも解消。
+function fetchKeyedImage(url, key, onDone, onErr) {
+  try {
+    const headers = {};
+    if(key) headers['Authorization'] = 'Bearer ' + key;
+    fetch(url, { headers, cache: 'no-store' })
+      .then(r => { if(!r.ok) throw new Error('http ' + r.status); return r.blob(); })
+      .then(blob => {
+        if(!blob || blob.size < 1000) throw new Error('empty blob');
+        onDone(URL.createObjectURL(blob));
+      })
+      .catch(e => { console.warn('[LGO] keyed fetch失敗→フォールバック:', e); onErr && onErr(e); });
+  } catch(e) { onErr && onErr(e); }
+}
+
 // ── 画像URL→base64（CORS可なら履歴に保存できる形へ）──
 function convertImageToBase64(src, imgEl) {
   return new Promise((resolve, reject) => {
@@ -1783,7 +1799,15 @@ function generateImage(promptData, seed) {
     p2.src = plainUrl;
   };
   pollinImg.onerror = tryPlainThenHorde;
-  pollinImg.src = pollinUrl;
+  const _pk = getPollinKey();
+  if(_pk) {
+    // キー使用時は fetch+Bearer で取得（<img>はヘッダー不可＝匿名化して正方形になる問題を解消）
+    fetchKeyedImage(pollinUrl, _pk,
+      (objUrl) => { if(!done) win(objUrl, 'Pollinations-HD'); },
+      ()       => { if(!done) tryPlainThenHorde(); });
+  } else {
+    pollinImg.src = pollinUrl;
+  }
 
   // ② 18秒で未完了なら Horde も並行起動（保険）
   pollinTimer = setTimeout(() => {
@@ -1862,6 +1886,13 @@ function resumePendingGeneration() {
   const tryPollin = () => {
     if(!p.pollinUrl) { onFail('回収できませんでした'); return; }
     if(hint) hint.textContent = '✦ Pollinations の結果を回収中…';
+    const _pk = getPollinKey();
+    if(_pk) {
+      fetchKeyedImage(p.pollinUrl, _pk,
+        (objUrl) => win(objUrl, 'Pollinations-HD'),
+        ()       => onFail('回収に失敗しました'));
+      return;
+    }
     const im = new Image(); im.crossOrigin = 'anonymous';
     im.onload  = () => win(p.pollinUrl, 'Pollinations');
     im.onerror = () => onFail('回収に失敗しました');

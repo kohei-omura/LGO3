@@ -1642,8 +1642,11 @@ function finishWithImage(src, winner, promptData, token) {
     let displayUrl = src, thumb = null;
     try {
       if(keyed) {
-        // 認証取得済みの高解像度blobをそのまま表示（PNG再エンコード廃止＝高速・省メモリ・縦長保持）
-        displayUrl = src;
+        // 高品質モデル出力をPNGでフル保存（最高品質を保持）。blobは下でoff描画に使用後、次回生成時に解放される
+        const cv = document.createElement('canvas');
+        cv.width = off.naturalWidth || 1024; cv.height = off.naturalHeight || 1536;
+        cv.getContext('2d').drawImage(off,0,0);
+        displayUrl = cv.toDataURL('image/png');
       } else {
         const up = upscaleToDataURL(off, quality);
         if(up) displayUrl = up;

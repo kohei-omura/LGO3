@@ -330,10 +330,10 @@
       <button class="quality-btn pmodel-btn" data-m="seedream" onclick="setPollinModel('seedream')">🌊 Seedream<small>高品質</small></button>
       <button class="quality-btn pmodel-btn" data-m="flux" onclick="setPollinModel('flux')">⚡ Flux<small>標準・安定</small></button>
     </div>
-    <input class="settings-input" id="pollinKeyInput" type="text" placeholder="pk_... （Pollinations 公開鍵）" value="" style="margin-top:8px">
+    <input class="settings-input" id="pollinKeyInput" type="text" placeholder="sk_... （Pollinations APIキー）" value="" style="margin-top:8px">
     <div class="settings-hint" style="margin-bottom:14px">
-      📌 <a href="https://enter.pollinations.ai" target="_blank">enter.pollinations.ai</a> で無料登録し<strong>公開鍵(pk_)</strong>を取得→入力すると、Nano Banana 2 / Seedream など<strong style="color:var(--gold)">本物の高性能モデルがネイティブ高解像度・PNG（約2〜5MB）の最高品質</strong>で生成されます。<br>
-      ※ これらは Pollen クレジット消費（無料枠あり／高品質モデルは有料）。未入力時は無料の簡易モデル(約0.6MP＋自動拡大)で動作します。
+      📌 <a href="https://enter.pollinations.ai" target="_blank">enter.pollinations.ai</a> の「API」→「Add Key」で<strong>APIキー(sk_)</strong>を発行→入力すると、Nano Banana 2 / Seedream など<strong style="color:var(--gold)">本物の高性能モデルがネイティブ高解像度・PNG（約2〜5MB）の最高品質</strong>で生成されます。<br>
+      ※ 本アプリはヘッダー認証で送るため sk_ で動作します。Pollen クレジット消費（無料枠あり／高品質モデルは有料）。<strong style="color:var(--rose)">sk_は秘密鍵</strong>なので、キーに少額のBudget上限を設定推奨（万一に備え）。未入力時は無料の簡易モデル(約0.6MP＋自動拡大)で動作します。
     </div>
     <button class="settings-save-btn" onclick="savePollinKey()" style="margin-bottom:18px">💾 高品質キーを保存</button>
 
@@ -341,6 +341,12 @@
     <button id="safeModeBtn" class="quality-btn" onclick="setSafeMode(!getSafeMode())" style="width:100%;margin-bottom:6px">🛡 セーフティ強化：OFF</button>
     <div class="settings-hint" style="margin-bottom:18px">
       通常はOFF推奨。ONにすると強めの検閲フィルタ（safe）が入り、人物系の指定が除外され<strong style="color:var(--gold)">背景だけの画像になる</strong>ことがあります。生成プロンプトは健全な内容のみのため、既定OFFで問題ありません。切替後は「再生成」で反映されます。
+    </div>
+
+    <label class="settings-label" style="margin-top:4px">✦ 精細強化</label>
+    <button id="enhanceModeBtn" class="quality-btn" onclick="setEnhanceMode(!getEnhanceMode())" style="width:100%;margin-bottom:6px">✨ enhance精細強化：OFF</button>
+    <div class="settings-hint" style="margin-bottom:18px">
+      ONにするとAIがプロンプトを補強し<strong style="color:var(--gold)">より精細な画像</strong>になります。反面、<strong>構図や顔立ちが変化</strong>することがあり、生成が数秒遅くなります。狙った雰囲気で安定させたい時はOFF。切替後は「再生成」で反映されます。
     </div>
 
     <label class="settings-label">Stable Horde APIキー（無料登録で高速化）</label>
@@ -1381,6 +1387,15 @@ function setSafeMode(on) {
   const b = document.getElementById('safeModeBtn');
   if(b) { b.classList.toggle('active', on); b.textContent = on ? '🛡 セーフティ強化：ON' : '🛡 セーフティ強化：OFF'; }
 }
+// ✨ enhance（精細強化）。ON時はプロンプトをAI補強し精細化（構図が変化・生成やや遅）。既定OFF
+function getEnhanceMode() {
+  try { return localStorage.getItem('lg_enhance') === '1'; } catch(e) { return false; }
+}
+function setEnhanceMode(on) {
+  try { if(on) localStorage.setItem('lg_enhance','1'); else localStorage.removeItem('lg_enhance'); } catch(e){}
+  const b = document.getElementById('enhanceModeBtn');
+  if(b) { b.classList.toggle('active', on); b.textContent = on ? '✨ enhance精細強化：ON' : '✨ enhance精細強化：OFF'; }
+}
 const POLLIN_MODELS = { 'nanobanana-2':'Nano Banana 2', 'seedream':'Seedream', 'flux':'Flux' };
 function getPollinModel() {
   try { return localStorage.getItem('lg_pollinmodel') || 'flux'; } catch(e) { return 'flux'; }
@@ -1479,12 +1494,13 @@ function buildPollinationsUrl(promptData, seed) {
          + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
          + `&nofeed=true&nologo=true&key=${encodeURIComponent(pk)}`;
     if(getSafeMode()) kurl += '&safe=true'; // 🛡セーフティ強化モードON時のみ付与（人物検閲を回避）
+    if(getEnhanceMode()) kurl += '&enhance=true'; // ✨精細強化ON時のみ
     return kurl;
   }
   let url = `https://image.pollinations.ai/prompt/${encoded}`
           + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
           + `&nologo=true&nofeed=true&private=true`;
-  if(q.enhance) url += '&enhance=true';
+  if(q.enhance || getEnhanceMode()) url += '&enhance=true';
   return url;
 }
 
@@ -2136,6 +2152,7 @@ function toggleSettings() {
     try { document.getElementById('pollinKeyInput').value = localStorage.getItem('lg_pollinkey') || ''; } catch(e){}
     setPollinModel(getPollinModel());
     setSafeMode(getSafeMode());
+    setEnhanceMode(getEnhanceMode());
   }
 }
 

@@ -811,6 +811,7 @@ let currentImageUrl   = null;
 let currentBlob       = null;  // 保存用に事前準備した Blob
 let currentFile       = null;  // navigator.share 用の File
 let currentObjUrl     = null;  // <a download> 用の ObjectURL
+let lastKeyedObjUrl   = null;  // keyed表示用blobURL（次回生成時に解放しメモリ蓄積を防ぐ）
 let isGenerating      = false;
 let GEN_TOKEN         = 0;   // 世代トークン：最新の生成のみ finish を許可（二重finish防止）
 let histRenderCount   = 30;  // 履歴の初期表示件数（「もっと見る」で+30）
@@ -1497,7 +1498,10 @@ function fetchKeyedImage(url, key, onDone, onErr) {
       .then(r => { if(!r.ok) throw new Error('http ' + r.status); return r.blob(); })
       .then(blob => {
         if(!blob || blob.size < 1000) throw new Error('empty blob');
-        onDone(URL.createObjectURL(blob));
+        if(lastKeyedObjUrl) { try { URL.revokeObjectURL(lastKeyedObjUrl); } catch(e){} }
+        const obj = URL.createObjectURL(blob);
+        lastKeyedObjUrl = obj;
+        onDone(obj);
       })
       .catch(e => { console.warn('[LGO] keyed fetch失敗→フォールバック:', e); onErr && onErr(e); });
   } catch(e) { onErr && onErr(e); }
@@ -1638,11 +1642,8 @@ function finishWithImage(src, winner, promptData, token) {
     let displayUrl = src, thumb = null;
     try {
       if(keyed) {
-        // 本物の高性能モデル出力 → PNGでフル保存（約2〜5MB・最高品質を保持）
-        const cv = document.createElement('canvas');
-        cv.width = off.naturalWidth || 1024; cv.height = off.naturalHeight || 1536;
-        cv.getContext('2d').drawImage(off,0,0);
-        displayUrl = cv.toDataURL('image/png');
+        // 認証取得済みの高解像度blobをそのまま表示（PNG再エンコード廃止＝高速・省メモリ・縦長保持）
+        displayUrl = src;
       } else {
         const up = upscaleToDataURL(off, quality);
         if(up) displayUrl = up;
@@ -1789,7 +1790,8 @@ function generateImage(promptData, seed) {
   const tryPlainThenHorde = () => {
     if(done) return;
     const plainUrl = 'https://image.pollinations.ai/prompt/' +
-      encodeURIComponent(((promptData.prompt||'').length > 350 ? promptData.prompt.slice(0,350) : (promptData.prompt||''))) + '?nologo=true';
+      encodeURIComponent(((promptData.prompt||'').length > 350 ? promptData.prompt.slice(0,350) : (promptData.prompt||''))) +
+      `?width=832&height=1216&seed=${Math.floor(Math.random()*1000000)}&nologo=true&nofeed=true`;
     if(hint) hint.textContent = '✦ 簡易モードで再試行中…（API障害対応）';
     const p2 = new Image(); p2.crossOrigin = 'anonymous';
     p2.onload  = () => { if(!done) win(plainUrl, 'Pollinations簡易'); };

@@ -1595,6 +1595,7 @@ function fetchKeyedImage(url, key, onDone, onErr) {
 let _varRunning = false;
 let _varItems = [];
 let _lastPromptData = null;
+let _lastSeed = 0; // その画像を生成した実シード（バリエーションの基準に使う＝生成ごとに変わる）
 function _genOneVariation(seed, pd, onOk, onErr) {
   const pk = getPollinKey();
   if(pk) {
@@ -1635,7 +1636,9 @@ function generateVariations() {
   if(!pd) return;
   const pk = getPollinKey();
   if(pk && !confirm('🎲 バリエーションを3枚生成します。\n※Pollen（キー）を3枚分消費します。よろしいですか？')) return;
-  const base = currentDiv ? getDailySeed(currentDiv) : Math.floor(Math.random() * 1000000);
+  // 基準は「この画像の実シード」。フリー入力や再生成では毎回変わるので、
+  // 同じプロンプトでも生成のたびに3枚が必ず変わる（当日シード固定だと同一URL→キャッシュで変わらなかった）
+  const base = _lastSeed || (currentDiv ? getDailySeed(currentDiv) : Math.floor(Math.random() * 1000000));
   const seeds = [base + 1001, base + 2002, base + 3003]; // 本命(base)と必ず異なる
   _varRunning = true;
   _varItems = [undefined, undefined, undefined];
@@ -1921,6 +1924,7 @@ function generateImage(promptData, seed) {
 
   stopAll();
   _clearVariations(); // 新規生成のたびに前回のバリエーション（サムネ・objURL）を破棄
+  _lastSeed = seed;   // この画像の実シードを保持（バリエーションはこれを基準にするので毎回変わる）
   loading.classList.remove('hidden');
   errorDiv.style.display = 'none';
   img.classList.remove('loaded');
@@ -2288,6 +2292,7 @@ function generateImg2ImgWithHorde(promptData, strength, sourceBase64) {
 
   stopAll();
   _clearVariations(); // img2imgの新規生成でも前回のバリエーションを破棄
+  _lastSeed = Math.floor(Math.random() * 999999); // 画像参照でもバリエーションが毎回変わるように
   loading.classList.remove('hidden');
   errorDiv.style.display = 'none';
   img.classList.remove('loaded');

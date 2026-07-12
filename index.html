@@ -1655,6 +1655,16 @@ function generateVariations() {
     (url, isObj) => onDone(i, url, isObj),
     () => onDone(i, null, false)));
 }
+// 新規生成時に古いバリエーションのサムネを消去し objURL を解放（占い/フリー/画像参照 全モード共通）
+function _clearVariations() {
+  try { _varItems.forEach(x => { if(x && x.isObj) { try { URL.revokeObjectURL(x.url); } catch(e){} } }); } catch(e){}
+  _varItems = [];
+  _varRunning = false;
+  const strip = document.getElementById('varStrip');
+  if(strip) strip.innerHTML = '';
+  const btn = document.getElementById('varBtn');
+  if(btn) { btn.disabled = true; btn.textContent = '🎲 バリエーション生成（3枚から選ぶ）'; }
+}
 function selectVariation(i) {
   if(_varRunning) return;
   const it = _varItems[i];
@@ -1910,6 +1920,7 @@ function generateImage(promptData, seed) {
   const hint     = document.getElementById('loadingPromptHint');
 
   stopAll();
+  _clearVariations(); // 新規生成のたびに前回のバリエーション（サムネ・objURL）を破棄
   loading.classList.remove('hidden');
   errorDiv.style.display = 'none';
   img.classList.remove('loaded');
@@ -2276,6 +2287,7 @@ function generateImg2ImgWithHorde(promptData, strength, sourceBase64) {
   const hint     = document.getElementById('loadingPromptHint');
 
   stopAll();
+  _clearVariations(); // img2imgの新規生成でも前回のバリエーションを破棄
   loading.classList.remove('hidden');
   errorDiv.style.display = 'none';
   img.classList.remove('loaded');

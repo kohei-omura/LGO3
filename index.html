@@ -1822,21 +1822,17 @@ function finishWithImage(src, winner, promptData, token) {
   off.onload = () => {
     let displayUrl = src, thumb = null;
     try {
-      if(keyed) {
-        // 高品質モデル出力をPNGでフル保存（最高品質を保持）。blobは下でoff描画に使用後、次回生成時に解放される
+      // keyed/非keyed を問わず、目標解像度(hq=2304 / balanced=1536)未満なら受信後に高品質アップスケール。
+      //  keyedがネイティブ高解像度で返った場合は upscaleToDataURL が null を返すので、無劣化PNGでフル保存する。
+      //  （キー使用時でも 0.6MP=627×940 で返る／無鍵フォールバックに落ちる場合に627×940のまま保存されていた不具合を修正）
+      const up = upscaleToDataURL(off, quality);
+      if(up) {
+        displayUrl = up;
+      } else {
         const cv = document.createElement('canvas');
         cv.width = off.naturalWidth || 1024; cv.height = off.naturalHeight || 1536;
-        cv.getContext('2d').drawImage(off,0,0);
-        displayUrl = cv.toDataURL('image/png');
-      } else {
-        const up = upscaleToDataURL(off, quality);
-        if(up) displayUrl = up;
-        else {
-          const cv = document.createElement('canvas');
-          cv.width = off.naturalWidth||768; cv.height = off.naturalHeight||1152;
-          cv.getContext('2d').drawImage(off,0,0);
-          displayUrl = cv.toDataURL('image/jpeg', 0.92);
-        }
+        cv.getContext('2d').drawImage(off, 0, 0);
+        displayUrl = keyed ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92);
       }
       thumb = makeThumb(off);
     } catch(e) { displayUrl = src; thumb = null; }

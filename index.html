@@ -118,6 +118,17 @@
   .btn-regen:hover { background: linear-gradient(135deg, rgba(167,139,250,.3), rgba(244,154,173,.3)); }
   .btn-dl { background: linear-gradient(135deg, rgba(232,201,106,.2), rgba(110,231,183,.15)); border: 1px solid rgba(232,201,106,.35); color: var(--gold); }
   .btn-dl:hover { background: linear-gradient(135deg, rgba(232,201,106,.3), rgba(110,231,183,.25)); }
+  .btn-share { background: linear-gradient(135deg, rgba(167,139,250,.2), rgba(232,201,106,.14)); border: 1px solid rgba(167,139,250,.4); color: var(--gold); }
+  .btn-share:hover { background: linear-gradient(135deg, rgba(167,139,250,.3), rgba(232,201,106,.22)); }
+  .btn-share:disabled { opacity:.5; cursor:default; }
+  .btn-var { width:100%; margin-top:8px; background: linear-gradient(135deg, rgba(167,139,250,.18), rgba(232,201,106,.12)); border:1px solid rgba(167,139,250,.4); color: var(--gold); font-weight:700; }
+  .btn-var:disabled { opacity:.5; cursor:default; }
+  .var-strip { display:flex; gap:8px; overflow-x:auto; margin-top:10px; padding-bottom:4px; -webkit-overflow-scrolling:touch; }
+  .var-strip:empty { display:none; }
+  .var-thumb { position:relative; flex:0 0 auto; width:96px; height:144px; border-radius:12px; overflow:hidden; border:1px solid rgba(232,201,106,.3); cursor:pointer; background:rgba(255,255,255,.04); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:.8rem; }
+  .var-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .var-pick { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff; font-size:.58rem; text-align:center; padding:3px 0; letter-spacing:.03em; }
+  .var-fail { color: var(--muted); }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   .div-card { background: var(--glass); border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px; margin-bottom: 20px; backdrop-filter: blur(8px); }
   .div-title { font-family: 'Cinzel Decorative', serif; font-size: .6rem; letter-spacing: .2em; color: var(--gold); margin-bottom: 14px; text-align: center; }
@@ -157,6 +168,10 @@
   .settings-hint a { color: var(--violet); }
   .settings-save-btn { margin-top: 8px; padding: 7px 16px; background: linear-gradient(135deg, rgba(167,139,250,.25), rgba(244,154,173,.2)); border: 1px solid rgba(167,139,250,.4); border-radius: 8px; color: var(--violet); font-size: .72rem; cursor: pointer; }
   .hist-del { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.2); color: #fff; font-size: .7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
+  .hist-fav { position: absolute; top: 5px; left: 5px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.2); color: #fff; font-size: .78rem; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
+  .hist-fav.on { color: var(--gold); border-color: rgba(232,201,106,.7); background: rgba(232,201,106,.22); }
+  .fav-filter { padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(232,201,106,.4); background: rgba(232,201,106,.08); color: var(--gold); font-size: .72rem; font-weight: 700; cursor: pointer; letter-spacing: .05em; }
+  .fav-filter.active { background: #e8c96a; color: #1a1206; border-color: #e8c96a; }
   .tab-row { display: flex; gap: 0; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 16px; }
   .tab-btn { flex: 1; padding: 10px 4px; background: none; border: none; color: var(--muted); font-size: .72rem; cursor: pointer; transition: all .2s; letter-spacing: .03em; }
   .tab-btn.active { background: linear-gradient(135deg,rgba(167,139,250,.3),rgba(244,154,173,.2)); color: var(--text); font-weight: 700; }
@@ -263,7 +278,10 @@
     <div class="action-row">
       <button class="btn btn-regen" id="regenBtn" onclick="regenerate()">✦ 再生成</button>
       <button class="btn btn-dl" id="dlBtn" onclick="downloadImage()" disabled>↓ 保存</button>
+      <button class="btn btn-share" id="shareBtn" onclick="shareImage()" disabled>📤 共有</button>
     </div>
+    <button class="btn btn-var" id="varBtn" onclick="generateVariations()" disabled>🎲 バリエーション生成（3枚から選ぶ）</button>
+    <div class="var-strip" id="varStrip"></div>
   </div>
 
   <div class="div-card" id="divCard">
@@ -330,6 +348,7 @@
       <button class="quality-btn pmodel-btn" data-m="seedream" onclick="setPollinModel('seedream')">🌊 Seedream<small>高品質</small></button>
       <button class="quality-btn pmodel-btn" data-m="flux" onclick="setPollinModel('flux')">⚡ Flux<small>標準・安定</small></button>
     </div>
+    <div class="settings-note" style="margin-top:4px">モデル説明：🍌 Nano Banana 2＝最高品質（Gemini 3.1）／🌊 Seedream＝高品質／⚡ Flux＝高品質標準・安定（既定）</div>
     <input class="settings-input" id="pollinKeyInput" type="text" placeholder="sk_... （Pollinations APIキー）" value="" style="margin-top:8px">
     <div class="settings-hint" style="margin-bottom:14px">
       📌 <a href="https://enter.pollinations.ai" target="_blank">enter.pollinations.ai</a> の「API」→「Add Key」で<strong>APIキー(sk_)</strong>を発行→入力すると、Nano Banana 2 / Seedream など<strong style="color:var(--gold)">本物の高性能モデルがネイティブ高解像度・PNG（約2〜5MB）の最高品質</strong>で生成されます。<br>
@@ -360,6 +379,7 @@
 
   <div class="history-section">
     <div class="history-title">✦ ORACLE GALLERY ✦</div>
+    <div style="text-align:center;margin:-6px 0 10px"><button id="favFilterBtn" class="fav-filter" onclick="toggleFavFilter()">★ のみ表示</button></div>
     <div class="history-grid" id="historyGrid"><div class="no-history">まだ履歴がありません</div></div>
   </div>
 
@@ -821,6 +841,7 @@ let lastKeyedObjUrl   = null;  // keyed表示用blobURL（次回生成時に解�
 let isGenerating      = false;
 let GEN_TOKEN         = 0;   // 世代トークン：最新の生成のみ finish を許可（二重finish防止）
 let histRenderCount   = 30;  // 履歴の初期表示件数（「もっと見る」で+30）
+let _favOnly          = false;  // 機能B: ★のみ表示フィルタ
 let currentStyle = 'anime';
 let freeStyle    = 'anime';
 try {
@@ -1299,6 +1320,25 @@ function loadHistory() {
   }));
 }
 
+// 機能B: ★お気に入りトグル（IndexedDBに fav:true を保存・旧レコード互換）
+function toggleFav(id, ev) {
+  if(ev) ev.stopPropagation();
+  openDB().then(db => new Promise(res => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const g = store.get(id);
+    g.onsuccess = () => { const rec = g.result; if(rec) { rec.fav = !rec.fav; store.put(rec); } };
+    tx.oncomplete = res; tx.onerror = res;
+  })).then(() => renderHistory()).catch(e => console.warn('toggleFav:', e));
+}
+function toggleFavFilter() {
+  _favOnly = !_favOnly;
+  const b = document.getElementById('favFilterBtn');
+  if(b) { b.classList.toggle('active', _favOnly); b.textContent = _favOnly ? '★ お気に入りのみ' : '★ のみ表示'; }
+  histRenderCount = 30;
+  renderHistory();
+}
+
 function deleteHistoryEntry(id) {
   openDB().then(db => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -1332,14 +1372,22 @@ function renderHistory() {
       grid.innerHTML = '<div class="no-history" style="grid-column:1/-1">まだ履歴がありません<br><small>画像が生成されると保存されます</small></div>';
       return;
     }
-    // 欠陥4: 200件超は古い順（配列末尾＝savedAt昇順で古い）に物理削除
-    if(history.length > HISTORY_MAX) {
-      const excess = history.slice(HISTORY_MAX);
-      console.info(`[LGO] 履歴が${HISTORY_MAX}件を超えたため、古い順に${excess.length}件を削除します`);
+    // 機能B: 200件超は古い順に物理削除するが、★お気に入りは対象外（削除しない）
+    const _delable = history.filter(h => !h.fav);
+    if(_delable.length > HISTORY_MAX) {
+      const excess = _delable.slice(HISTORY_MAX);
+      console.info(`[LGO] 履歴(非★)が${HISTORY_MAX}件を超えたため、古い順に${excess.length}件を削除します`);
       excess.forEach(h => deleteHistoryQuiet(h.id));
-      history = history.slice(0, HISTORY_MAX);
+      const _del = new Set(excess.map(h => h.id));
+      history = history.filter(h => !_del.has(h.id));
     }
-    const shown = history.slice(0, histRenderCount);
+    // 機能B: ★のみ表示フィルタ
+    const _view = _favOnly ? history.filter(h => h.fav) : history;
+    if(_favOnly && _view.length === 0) {
+      grid.innerHTML = '<div class="no-history" style="grid-column:1/-1">★お気に入りはまだありません<br><small>履歴カードの☆を押すと登録できます</small></div>';
+      return;
+    }
+    const shown = _view.slice(0, histRenderCount);
     let html = shown.map(h => {
       const label = h.date ? h.date.slice(5).replace('-','/') : '—';
       const mode  = MODE_LABEL[h.mode] || '';
@@ -1351,11 +1399,12 @@ function renderHistory() {
           <div class="hist-theme">${h.rokuyo||''} ${h.score ? h.score+'pt' : ''}</div>
         </div>
         <button class="hist-del" onclick="event.stopPropagation();deleteHistoryEntry('${h.id}')">×</button>
+        <button class="hist-fav${h.fav ? ' on' : ''}" onclick="event.stopPropagation();toggleFav('${h.id}',event)">${h.fav ? '★' : '☆'}</button>
       </div>`;
     }).join('');
     // 欠陥4: 未表示分がある場合のみ「もっと見る」を表示（初期30件・以降+30）
-    if(history.length > histRenderCount) {
-      const rest = history.length - histRenderCount;
+    if(_view.length > histRenderCount) {
+      const rest = _view.length - histRenderCount;
       html += `<button onclick="showMoreHistory()" style="grid-column:1/-1;margin-top:4px;padding:11px;background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.32);border-radius:12px;color:var(--violet);font-size:.76rem;font-weight:700;cursor:pointer;letter-spacing:.06em">▽ もっと見る（残り${rest}件）</button>`;
     }
     grid.innerHTML = html;
@@ -1492,11 +1541,26 @@ function buildPollinationsUrl(promptData, seed) {
     const sz = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
     let kurl = `https://gen.pollinations.ai/image/${encoded}`
          + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
-         + `&nofeed=true&nologo=true&key=${encodeURIComponent(pk)}`;
+         + `&nofeed=true&nologo=true`; // 欠陥1: key=はURLに載せず Authorization ヘッダーのみで送る（sk_キーがサーバーログに残るのを防止）
     if(getSafeMode()) kurl += '&safe=true'; // 🛡セーフティ強化モードON時のみ付与（人物検閲を回避）
     if(getEnhanceMode()) kurl += '&enhance=true'; // ✨精細強化ON時のみ
     return kurl;
   }
+  let url = `https://image.pollinations.ai/prompt/${encoded}`
+          + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
+          + `&nologo=true&nofeed=true&private=true`;
+  if(q.enhance || getEnhanceMode()) url += '&enhance=true';
+  return url;
+}
+
+// 欠陥3: keyed失敗時の「無鍵通常URL」段（image.pollinations.ai・モデル/サイズ/従来品質）。
+//        pkの有無に関わらず常に無鍵の高品質URLを組み立てる（簡易URLへ直行せず画質を維持）。
+function buildNoKeyPollinationsUrl(promptData, seed) {
+  const ql = getImgQuality();
+  const q = IMG_QUALITY_PRESETS[ql] || IMG_QUALITY_PRESETS.balanced;
+  const prompt = promptData.prompt || '';
+  const trimmed = prompt.length > 350 ? prompt.slice(0, 350) : prompt;
+  const encoded = encodeURIComponent(trimmed);
   let url = `https://image.pollinations.ai/prompt/${encoded}`
           + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
           + `&nologo=true&nofeed=true&private=true`;
@@ -1510,7 +1574,10 @@ function fetchKeyedImage(url, key, onDone, onErr) {
   try {
     const headers = {};
     if(key) headers['Authorization'] = 'Bearer ' + key;
-    fetch(url, { headers, cache: 'no-store' })
+    // 欠陥2: 30秒でタイムアウト→onErr経由で既存フォールバックへ（無限待機を防止）
+    const _opt = { headers, cache: 'no-store' };
+    try { if(typeof AbortSignal !== 'undefined' && AbortSignal.timeout) _opt.signal = AbortSignal.timeout(30000); } catch(e){}
+    fetch(url, _opt)
       .then(r => { if(!r.ok) throw new Error('http ' + r.status); return r.blob(); })
       .then(blob => {
         if(!blob || blob.size < 1000) throw new Error('empty blob');
@@ -1521,6 +1588,87 @@ function fetchKeyedImage(url, key, onDone, onErr) {
       })
       .catch(e => { console.warn('[LGO] keyed fetch失敗→フォールバック:', e); onErr && onErr(e); });
   } catch(e) { onErr && onErr(e); }
+}
+
+// 機能A: 🎲 バリエーション生成（当日シード+1001/+2002/+3003を並行生成→3枚から選ぶ）
+//  keyedはfetch並行・無鍵はImage並行・Hordeは使わない。選択後は残り2枚のobjURLを解放。
+let _varRunning = false;
+let _varItems = [];
+let _lastPromptData = null;
+function _genOneVariation(seed, pd, onOk, onErr) {
+  const pk = getPollinKey();
+  if(pk) {
+    fetchKeyedImage(buildPollinationsUrl(pd, seed), pk,
+      (obj) => onOk(obj, true),
+      () => { // keyed失敗→無鍵Image（Hordeは使わない）
+        const u = buildNoKeyPollinationsUrl(pd, seed);
+        const im = new Image(); im.crossOrigin = 'anonymous';
+        im.onload = () => onOk(u, false); im.onerror = () => onErr && onErr();
+        im.src = u;
+      });
+  } else {
+    const u = buildNoKeyPollinationsUrl(pd, seed);
+    const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => onOk(u, false); im.onerror = () => onErr && onErr();
+    im.src = u;
+  }
+}
+function _renderVarStrip() {
+  const strip = document.getElementById('varStrip');
+  if(!strip) return;
+  let html = '';
+  for(let i = 0; i < 3; i++) {
+    const it = _varItems[i];
+    if(it && it.url) {
+      html += `<div class="var-thumb" onclick="selectVariation(${i})"><img src="${it.url}" loading="lazy"><span class="var-pick">この1枚を選ぶ</span></div>`;
+    } else if(it === null) {
+      html += '<div class="var-thumb var-fail">✕</div>';
+    } else {
+      html += '<div class="var-thumb var-load">✦…</div>';
+    }
+  }
+  strip.innerHTML = html;
+}
+function generateVariations() {
+  if(isGenerating || _varRunning) return;         // 実行中は再タップ無効
+  const pd = _lastPromptData;
+  if(!pd) return;
+  const pk = getPollinKey();
+  if(pk && !confirm('🎲 バリエーションを3枚生成します。\n※Pollen（キー）を3枚分消費します。よろしいですか？')) return;
+  const base = currentDiv ? getDailySeed(currentDiv) : Math.floor(Math.random() * 1000000);
+  const seeds = [base + 1001, base + 2002, base + 3003]; // 本命(base)と必ず異なる
+  _varRunning = true;
+  _varItems = [undefined, undefined, undefined];
+  const btn = document.getElementById('varBtn');
+  if(btn) { btn.disabled = true; btn.textContent = '🎲 3枚生成中…'; }
+  _renderVarStrip();
+  let doneCount = 0;
+  const onDone = (i, url, isObj) => {
+    _varItems[i] = url ? { url, isObj } : null;
+    _renderVarStrip();
+    if(++doneCount === 3) {
+      _varRunning = false;
+      if(btn) { btn.disabled = false; btn.textContent = '🎲 バリエーション生成（3枚から選ぶ）'; }
+    }
+  };
+  seeds.forEach((sd, i) => _genOneVariation(sd, pd,
+    (url, isObj) => onDone(i, url, isObj),
+    () => onDone(i, null, false)));
+}
+function selectVariation(i) {
+  if(_varRunning) return;
+  const it = _varItems[i];
+  if(!it || !it.url) return;
+  // 選ばれなかった2枚は破棄（objURLはrevoke）
+  _varItems.forEach((x, j) => {
+    if(x && j !== i && x.isObj) { try { URL.revokeObjectURL(x.url); } catch(e){} }
+  });
+  const chosenUrl = it.url;
+  _varItems = [];
+  const strip = document.getElementById('varStrip');
+  if(strip) strip.innerHTML = '';
+  // 本命として表示＆履歴保存（共通のfinishWithImage経由・新しい世代トークンで）
+  finishWithImage(chosenUrl, 'バリエーション', _lastPromptData, ++GEN_TOKEN);
 }
 
 // ── 画像URL→base64（CORS可なら履歴に保存できる形へ）──
@@ -1625,6 +1773,7 @@ function finishWithImage(src, winner, promptData, token) {
   clearPending();
   const quality = (promptData && promptData.quality) || getImgQuality();
   const recovered = promptData && promptData._recovered ? promptData._recovered : null;
+  _lastPromptData = promptData; // 機能A: バリエーション生成の元プロンプトとして保持
 
   const show = (displayUrl, saveData, label) => {
     currentImageUrl = displayUrl;
@@ -1634,6 +1783,8 @@ function finishWithImage(src, winner, promptData, token) {
       if(loading) loading.classList.add('hidden');
       if(errorDiv) errorDiv.style.display = 'none';
       if(dlBtn) dlBtn.disabled = false;
+      { const _sb=document.getElementById('shareBtn'); if(_sb) _sb.disabled=false; }
+      { const _vb=document.getElementById('varBtn'); if(_vb) _vb.disabled=false; } // 機能A: 表示成功でバリエーション可
       if(regenBtn) regenBtn.disabled = false;
       if(hint) hint.textContent = recovered ? '✦ 昨日の未回収分を保存しました' : `✦ 生成完了！(${label})`;
     };
@@ -1642,6 +1793,7 @@ function finishWithImage(src, winner, promptData, token) {
       if(loading) loading.classList.add('hidden');
       if(regenBtn) regenBtn.disabled = false;
       if(dlBtn) dlBtn.disabled = true;
+  { const _sb3=document.getElementById('shareBtn'); if(_sb3) _sb3.disabled=true; }
       if(errorDiv) {
         errorDiv.innerHTML = '<div class="error-icon">🌙</div><div class="error-msg">画像の表示に失敗しました<br><small>「再生成」を押してください</small></div>';
         errorDiv.style.display = 'flex';
@@ -1776,7 +1928,7 @@ function generateImage(promptData, seed) {
     ? `${currentDiv.now.getFullYear()}-${String(currentDiv.now.getMonth()+1).padStart(2,'0')}-${String(currentDiv.now.getDate()).padStart(2,'0')}`
     : '';
   // ★ 開始と同時に保存 → 中断後の回収が可能に
-  savePending({ mode: promptData.mode || 'oracle', promptData, seed, quality: getImgQuality(), pollinUrl, hordeJobId: null, dateKey });
+  savePending({ mode: promptData.mode || 'oracle', promptData, seed, quality: getImgQuality(), pollinUrl, keyed: !!getPollinKey(), hordeJobId: null, dateKey });
 
   let done = false;
   const onFail = (msg) => {
@@ -1820,12 +1972,22 @@ function generateImage(promptData, seed) {
     p2.src = plainUrl;
   };
   pollinImg.onerror = tryPlainThenHorde;
+  // 欠陥3: keyed失敗→無鍵通常URL(image.pollinations.ai・モデル/サイズ/従来品質)→簡易URL→Horde の四段
+  const tryNoKeyThenPlain = () => {
+    if(done) return;
+    const noKeyUrl = buildNoKeyPollinationsUrl(promptData, seed);
+    if(hint) hint.textContent = '✦ 通常モードで再試行中…';
+    const p1 = new Image(); p1.crossOrigin = 'anonymous';
+    p1.onload  = () => { if(!done) win(noKeyUrl, 'Pollinations通常'); };
+    p1.onerror = tryPlainThenHorde; // 無鍵通常も失敗→簡易→Horde
+    p1.src = noKeyUrl;
+  };
   const _pk = getPollinKey();
   if(_pk) {
     // キー使用時は fetch+Bearer で取得（<img>はヘッダー不可＝匿名化して正方形になる問題を解消）
     fetchKeyedImage(pollinUrl, _pk,
       (objUrl) => { if(!done) win(objUrl, 'Pollinations-HD'); },
-      ()       => { if(!done) tryPlainThenHorde(); });
+      ()       => { if(!done) tryNoKeyThenPlain(); }); // 欠陥3: keyed失敗→無鍵通常→簡易→Horde
   } else {
     pollinImg.src = pollinUrl;
   }
@@ -1869,7 +2031,8 @@ function resumePendingGeneration() {
   isGenerating = true;
   if(errorDiv) errorDiv.style.display = 'none';
   if(loading)  loading.classList.remove('hidden');
-  if(dlBtn)    dlBtn.disabled = true;
+  if(dlBtn) dlBtn.disabled = true;
+  { const _sb3=document.getElementById('shareBtn'); if(_sb3) _sb3.disabled=true; }
   if(regenBtn) regenBtn.disabled = true;
   if(hint)     hint.textContent = '✦ 前回の生成を回収中…';
   const genToken = ++GEN_TOKEN; // 回収も1世代として扱う
@@ -1907,8 +2070,10 @@ function resumePendingGeneration() {
   const tryPollin = () => {
     if(!p.pollinUrl) { onFail('回収できませんでした'); return; }
     if(hint) hint.textContent = '✦ Pollinations の結果を回収中…';
+    // 欠陥4: 保存したkeyedフラグで判定（旧形式pending=keyed無しはURLから推定）。keyedはヘッダー経由で高品質回収
+    const _isKeyed = (p.keyed === true) || (p.keyed === undefined && /gen\.pollinations\.ai/.test(p.pollinUrl || ''));
     const _pk = getPollinKey();
-    if(_pk) {
+    if(_isKeyed && _pk) {
       fetchKeyedImage(p.pollinUrl, _pk,
         (objUrl) => win(objUrl, 'Pollinations-HD'),
         ()       => onFail('回収に失敗しました'));
@@ -1962,6 +2127,26 @@ function showToast(msg) {
     document.body.appendChild(t);
     setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 2200);
   } catch(e) {}
+}
+
+function shareImage() {
+  // 機能C: 共有ボタン。既存の同期3段方式（share→a[download]→window.open）を流用し、text付きで共有
+  if(!currentFile && !currentObjUrl && !currentImageUrl) return;
+  const d = currentDiv ? currentDiv.now : new Date();
+  const dateStr = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
+  const roku = (currentDiv && currentDiv.rokuyo) ? (' ' + currentDiv.rokuyo) : '';
+  const text = `今日のラッキーガール ✦ ${dateStr}${roku}`;
+  const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.jpg`;
+  if(currentFile && navigator.canShare && navigator.canShare({ files: [currentFile] })) {
+    navigator.share({ files: [currentFile], text }).catch(() => {});
+    return;
+  }
+  if(currentObjUrl) {
+    const a = document.createElement('a'); a.href = currentObjUrl; a.download = fname;
+    document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); } catch(e){} }, 150);
+    return;
+  }
+  if(currentImageUrl) { try { window.open(currentImageUrl, '_blank'); } catch(e){} }
 }
 
 function downloadImage() {
@@ -2227,6 +2412,7 @@ function init() {
         img.classList.add('loaded');
         loading.classList.add('hidden');
         document.getElementById('dlBtn').disabled = false;
+        { const _sb2=document.getElementById('shareBtn'); if(_sb2) _sb2.disabled=false; }
         if(regenBtn) regenBtn.disabled = false;
         if(hint) hint.textContent = '✦ 本日の一枚（生成済み）';
       };

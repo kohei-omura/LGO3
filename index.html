@@ -1598,6 +1598,24 @@ let _varItems = [];
 let _lastPromptData = null;
 let _lastSeed = 0; // その画像を生成した実シード（バリエーションの基準に使う＝生成ごとに変わる）
 let _lastImgInfo = null; // 直近生成の受信解像度・形式（診断表示用）
+let _lastKeyedError = null; // 直近のkeyed失敗理由（診断表示用）
+// 指定モデルでkeyed URLを組み立てる（フォールバックでflux高解像度リトライ用）
+function buildKeyedUrlModel(promptData, seed, modelOverride) {
+  const ql = getImgQuality();
+  const pk = getPollinKey();
+  const prompt = promptData.prompt || '';
+  const trimmed = prompt.length > 350 ? prompt.slice(0, 350) : prompt;
+  const encoded = encodeURIComponent(trimmed);
+  const model = modelOverride || getPollinModel();
+  const sz = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
+  let kurl = `https://gen.pollinations.ai/image/${encoded}`
+       + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
+       + `&nofeed=true&nologo=true`
+       + `&key=${encodeURIComponent(pk)}`;
+  if(getSafeMode()) kurl += '&safe=true';
+  if(getEnhanceMode()) kurl += '&enhance=true';
+  return kurl;
+}
 function _genOneVariation(seed, pd, onOk, onErr) {
   const pk = getPollinKey();
   if(pk) {
@@ -1803,7 +1821,7 @@ function finishWithImage(src, winner, promptData, token) {
       if(regenBtn) regenBtn.disabled = false;
       if(hint) hint.textContent = recovered
         ? '✦ 昨日の未回収分を保存しました'
-        : `✦ 生成完了！(${label})` + (_lastImgInfo ? ` ／ ${_lastImgInfo.model} ／ 受信${_lastImgInfo.w}×${_lastImgInfo.h}→${_lastImgInfo.fmt}` : '');
+        : `✦ 生成完了！(${label})` + (_lastImgInfo ? ` ／ ${_lastImgInfo.model} ／ 受信${_lastImgInfo.w}×${_lastImgInfo.h}→${_lastImgInfo.fmt}` + (_lastImgInfo.err ? ` ／ keyed失敗:${_lastImgInfo.err}` : '') : '');
     };
     img.onerror = () => {
       console.warn('[LGO] 画像の表示に失敗しました:', displayUrl);
@@ -1850,7 +1868,7 @@ function finishWithImage(src, winner, promptData, token) {
         }
       }
       thumb = makeThumb(off);
-      _lastImgInfo = { w: off.naturalWidth || 0, h: off.naturalHeight || 0, fmt: (displayUrl.indexOf('image/png') >= 0 ? 'PNG' : 'JPEG'), winner, model: (getPollinKey() ? getPollinModel() : '無料') };
+      _lastImgInfo = { w: off.naturalWidth || 0, h: off.naturalHeight || 0, fmt: (displayUrl.indexOf('image/png') >= 0 ? 'PNG' : 'JPEG'), winner, model: (getPollinKey() ? getPollinModel() : '無料'), err: (winner !== 'Pollinations-HD' && _lastKeyedError) ? String((_lastKeyedError && _lastKeyedError.message) || _lastKeyedError) : '' };
     } catch(e) { displayUrl = src; thumb = null; }
     show(displayUrl, thumb || displayUrl, winner);
   };
@@ -2014,7 +2032,19 @@ function generateImage(promptData, seed) {
     // キー使用時は fetch+Bearer で取得（<img>はヘッダー不可＝匿名化して正方形になる問題を解消）
     fetchKeyedImage(pollinUrl, _pk,
       (objUrl) => { if(!done) win(objUrl, 'Pollinations-HD'); },
-      ()       => { if(!done) tryNoKeyThenPlain(); }); // 欠陥3: keyed失敗→無鍵通常→簡易→Horde
+      (err) => {
+        _lastKeyedError = err; // 失敗理由を記録（診断表示）
+        if(done) return;
+        // 選択モデル(例: nanobanana-2)がキーで失敗 → 無料0.6MPに落とさず、キー付きfluxで高解像度リトライ
+        if(getPollinModel() !== 'flux') {
+          if(hint) hint.textContent = '✦ Fluxで高画質リトライ中…';
+          fetchKeyedImage(buildKeyedUrlModel(promptData, seed, 'flux'), _pk,
+            (objUrl) => { if(!done) win(objUrl, 'Pollinations-HD'); },
+            (err2)   => { _lastKeyedError = err2 || err; if(!done) tryNoKeyThenPlain(); });
+        } else {
+          tryNoKeyThenPlain();
+        }
+      });
   } else {
     pollinImg.src = pollinUrl;
   }

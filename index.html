@@ -1541,7 +1541,8 @@ function buildPollinationsUrl(promptData, seed) {
     const sz = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
     let kurl = `https://gen.pollinations.ai/image/${encoded}`
          + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
-         + `&nofeed=true&nologo=true`; // 欠陥1: key=はURLに載せず Authorization ヘッダーのみで送る（sk_キーがサーバーログに残るのを防止）
+         + `&nofeed=true&nologo=true`
+         + `&key=${encodeURIComponent(pk)}`; // 認証をURLでも付与（ヘッダーのみだと gen 側が高解像度を返さず0.6MPになるため復元）。Authorizationヘッダーも併送。
     if(getSafeMode()) kurl += '&safe=true'; // 🛡セーフティ強化モードON時のみ付与（人物検閲を回避）
     if(getEnhanceMode()) kurl += '&enhance=true'; // ✨精細強化ON時のみ
     return kurl;
@@ -1817,7 +1818,8 @@ function finishWithImage(src, winner, promptData, token) {
   };
 
   // 受信画像をオフスクリーンで読み込み → 必要なら高品質アップスケール
-  const keyed = !!(promptData && promptData.keyed);
+  // キー認証で高品質モデル出力を取得できた場合（勝者=Pollinations-HD）はネイティブ高解像度PNGで保存する
+  const keyed = !!(promptData && promptData.keyed) || winner === 'Pollinations-HD';
   const off = new Image(); off.crossOrigin = 'anonymous';
   off.onload = () => {
     let displayUrl = src, thumb = null;

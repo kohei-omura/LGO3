@@ -129,6 +129,11 @@
   .var-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
   .var-pick { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff; font-size:.58rem; text-align:center; padding:3px 0; letter-spacing:.03em; }
   .var-fail { color: var(--muted); }
+  .quality-badge { margin: 10px 20px 0; padding: 8px 12px; border-radius: 10px; font-size: .72rem; line-height: 1.5; text-align: center; border: 1px solid var(--line); }
+  .quality-badge.native { color: var(--gold); border-color: rgba(232,201,106,.45); background: rgba(232,201,106,.08); }
+  .quality-badge.free { color: var(--muted); background: rgba(255,255,255,.03); }
+  .quality-badge b { color: inherit; }
+  .quality-badge .qb-note { display: block; margin-top: 2px; font-size: .66rem; opacity: .85; }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   .div-card { background: var(--glass); border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px; margin-bottom: 20px; backdrop-filter: blur(8px); }
   .div-title { font-family: 'Cinzel Decorative', serif; font-size: .6rem; letter-spacing: .2em; color: var(--gold); margin-bottom: 14px; text-align: center; }
@@ -256,6 +261,8 @@
         <div class="error-msg">星の導きが届きませんでした<br><small style="color:var(--muted)">「再生成」を押してください</small></div>
       </div>
     </div>
+
+    <div class="quality-badge" id="qualityBadge" style="display:none"></div>
 
     <div class="style-row">
       <button class="style-btn active-anime" id="btnAnime" onclick="setStyle('anime')">🎨 アニメ調</button>
@@ -1616,6 +1623,24 @@ function buildKeyedUrlModel(promptData, seed, modelOverride) {
   if(getEnhanceMode()) kurl += '&enhance=true';
   return kurl;
 }
+// 結果画面の常設「品質バッジ」：キー付きネイティブ か 無料fluxアップスケール かを明示
+function _renderQualityBadge() {
+  const el = document.getElementById('qualityBadge');
+  if(!el) return;
+  const info = _lastImgInfo;
+  if(!info) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = '';
+  const native = (info.winner === 'Pollinations-HD');
+  if(native) {
+    el.className = 'quality-badge native';
+    el.innerHTML = `✨ キー付きネイティブ高解像度 ／ <b>${info.model}</b> ／ ${info.w}×${info.h} ${info.fmt}`
+      + (info.err ? `<span class="qb-note">※選択モデルは使えず flux で生成</span>` : '');
+  } else {
+    el.className = 'quality-badge free';
+    el.innerHTML = `🆓 無料flux を高画質化 ／ 受信 ${info.w}×${info.h} → 2304px へ拡大＋鮮明化 ${info.fmt}`
+      + (info.err ? `<span class="qb-note">※本日のキー無料枠を使い切り→無料モード（明日回復）</span>` : '');
+  }
+}
 function _genOneVariation(seed, pd, onOk, onErr) {
   const pk = getPollinKey();
   if(pk) {
@@ -1755,18 +1780,26 @@ function upscaleToDataURL(imgEl, quality, asPng) {
   const targetH = upscaleTargetH(quality);
   if(!targetH || nh >= targetH) return null; // 等倍 or 既に十分大きい
   const scale = targetH / nh;
-  const tw = Math.round(nw*scale), th = Math.round(nh*scale);
-  // 2段階拡大でにじみを抑制
-  const midScale = Math.sqrt(scale);
-  const mw = Math.round(nw*midScale), mh = Math.round(nh*midScale);
-  const mid = document.createElement('canvas'); mid.width=mw; mid.height=mh;
-  const mctx = mid.getContext('2d'); mctx.imageSmoothingEnabled=true; mctx.imageSmoothingQuality='high';
-  mctx.drawImage(imgEl,0,0,mw,mh);
-  const cv = document.createElement('canvas'); cv.width=tw; cv.height=th;
-  const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
-  ctx.drawImage(mid,0,0,tw,th);
-  if(quality === 'hq') sharpenCanvas(ctx, tw, th, 0.55);
-  return asPng ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92); // キー使用時はPNGで無圧縮保存
+  const finalW = Math.round(nw*scale), finalH = Math.round(nh*scale);
+  // 多段拡大（1段あたり最大約1.5倍）でにじみ・ブロックノイズを抑えつつ滑らかに拡大
+  const stages = Math.max(1, Math.ceil(Math.log(scale) / Math.log(1.5)));
+  let src = imgEl;
+  for(let s = 1; s <= stages; s++) {
+    const t = s / stages;
+    const w = Math.round(nw + (finalW - nw) * t);
+    const h = Math.round(nh + (finalH - nh) * t);
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d');
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, 0, 0, w, h);
+    src = cv;
+  }
+  const fctx = src.getContext('2d');
+  // 鮮明化（アンシャープマスク）。高画質は強め・バランスは控えめ（0.6MP由来の甘さを補正）
+  if(quality === 'hq') { sharpenCanvas(fctx, finalW, finalH, 0.72); }
+  else if(quality === 'balanced') { sharpenCanvas(fctx, finalW, finalH, 0.42); }
+  // 無料flux由来はJPEG品質を上げて劣化を最小化（キー使用時はasPng=trueでPNG無圧縮）
+  return asPng ? src.toDataURL('image/png') : src.toDataURL('image/jpeg', 0.95);
 }
 function makeThumb(imgEl) {
   try {
@@ -1819,9 +1852,10 @@ function finishWithImage(src, winner, promptData, token) {
       { const _sb=document.getElementById('shareBtn'); if(_sb) _sb.disabled=false; }
       { const _vb=document.getElementById('varBtn'); if(_vb) _vb.disabled=false; } // 機能A: 表示成功でバリエーション可
       if(regenBtn) regenBtn.disabled = false;
+      _renderQualityBadge();
       if(hint) hint.textContent = recovered
         ? '✦ 昨日の未回収分を保存しました'
-        : `✦ 生成完了！(${label})` + (_lastImgInfo ? ` ／ ${_lastImgInfo.model} ／ 受信${_lastImgInfo.w}×${_lastImgInfo.h}→${_lastImgInfo.fmt}` + (_lastImgInfo.err ? ` ／ keyed失敗:${_lastImgInfo.err}` : '') : '');
+        : `✦ 生成完了！(${label})`;
     };
     img.onerror = () => {
       console.warn('[LGO] 画像の表示に失敗しました:', displayUrl);

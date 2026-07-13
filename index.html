@@ -1597,6 +1597,7 @@ let _varRunning = false;
 let _varItems = [];
 let _lastPromptData = null;
 let _lastSeed = 0; // その画像を生成した実シード（バリエーションの基準に使う＝生成ごとに変わる）
+let _lastImgInfo = null; // 直近生成の受信解像度・形式（診断表示用）
 function _genOneVariation(seed, pd, onOk, onErr) {
   const pk = getPollinKey();
   if(pk) {
@@ -1730,7 +1731,7 @@ function sharpenCanvas(ctx, w, h, k) {
     ctx.putImageData(outD,0,0);
   } catch(e) {}
 }
-function upscaleToDataURL(imgEl, quality) {
+function upscaleToDataURL(imgEl, quality, asPng) {
   const nw = imgEl.naturalWidth||0, nh = imgEl.naturalHeight||0;
   if(!nw || !nh) return null;
   const targetH = upscaleTargetH(quality);
@@ -1747,7 +1748,7 @@ function upscaleToDataURL(imgEl, quality) {
   const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
   ctx.drawImage(mid,0,0,tw,th);
   if(quality === 'hq') sharpenCanvas(ctx, tw, th, 0.55);
-  return cv.toDataURL('image/jpeg', 0.92);
+  return asPng ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92); // キー使用時はPNGで無圧縮保存
 }
 function makeThumb(imgEl) {
   try {
@@ -1800,7 +1801,9 @@ function finishWithImage(src, winner, promptData, token) {
       { const _sb=document.getElementById('shareBtn'); if(_sb) _sb.disabled=false; }
       { const _vb=document.getElementById('varBtn'); if(_vb) _vb.disabled=false; } // 機能A: 表示成功でバリエーション可
       if(regenBtn) regenBtn.disabled = false;
-      if(hint) hint.textContent = recovered ? '✦ 昨日の未回収分を保存しました' : `✦ 生成完了！(${label})`;
+      if(hint) hint.textContent = recovered
+        ? '✦ 昨日の未回収分を保存しました'
+        : `✦ 生成完了！(${label})` + (_lastImgInfo ? ` ／ 受信${_lastImgInfo.w}×${_lastImgInfo.h}→${_lastImgInfo.fmt}` : '');
     };
     img.onerror = () => {
       console.warn('[LGO] 画像の表示に失敗しました:', displayUrl);
@@ -1818,25 +1821,36 @@ function finishWithImage(src, winner, promptData, token) {
   };
 
   // 受信画像をオフスクリーンで読み込み → 必要なら高品質アップスケール
-  // キー認証で高品質モデル出力を取得できた場合（勝者=Pollinations-HD）はネイティブ高解像度PNGで保存する
-  const keyed = !!(promptData && promptData.keyed) || winner === 'Pollinations-HD';
+  // キーが入っていれば（経路が keyed 成功でも無鍵フォールバックでも）必ず高解像度PNGで保存する
+  const keyed = !!getPollinKey() || !!(promptData && promptData.keyed) || winner === 'Pollinations-HD';
   const off = new Image(); off.crossOrigin = 'anonymous';
   off.onload = () => {
     let displayUrl = src, thumb = null;
     try {
-      // keyed/非keyed を問わず、目標解像度(hq=2304 / balanced=1536)未満なら受信後に高品質アップスケール。
-      //  keyedがネイティブ高解像度で返った場合は upscaleToDataURL が null を返すので、無劣化PNGでフル保存する。
-      //  （キー使用時でも 0.6MP=627×940 で返る／無鍵フォールバックに落ちる場合に627×940のまま保存されていた不具合を修正）
-      const up = upscaleToDataURL(off, quality);
-      if(up) {
-        displayUrl = up;
+      if(keyed) {
+        // キー使用時：必ず高解像度PNG。ネイティブが目標以上ならそのまま、未満ならPNGでアップスケール
+        const up = upscaleToDataURL(off, quality, true); // PNG出力
+        if(up) {
+          displayUrl = up;
+        } else {
+          const cv = document.createElement('canvas');
+          cv.width = off.naturalWidth || 1024; cv.height = off.naturalHeight || 1536;
+          cv.getContext('2d').drawImage(off, 0, 0);
+          displayUrl = cv.toDataURL('image/png');
+        }
       } else {
-        const cv = document.createElement('canvas');
-        cv.width = off.naturalWidth || 1024; cv.height = off.naturalHeight || 1536;
-        cv.getContext('2d').drawImage(off, 0, 0);
-        displayUrl = keyed ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92);
+        const up = upscaleToDataURL(off, quality);
+        if(up) {
+          displayUrl = up;
+        } else {
+          const cv = document.createElement('canvas');
+          cv.width = off.naturalWidth || 768; cv.height = off.naturalHeight || 1152;
+          cv.getContext('2d').drawImage(off, 0, 0);
+          displayUrl = cv.toDataURL('image/jpeg', 0.92);
+        }
       }
       thumb = makeThumb(off);
+      _lastImgInfo = { w: off.naturalWidth || 0, h: off.naturalHeight || 0, fmt: (displayUrl.indexOf('image/png') >= 0 ? 'PNG' : 'JPEG'), winner };
     } catch(e) { displayUrl = src; thumb = null; }
     show(displayUrl, thumb || displayUrl, winner);
   };

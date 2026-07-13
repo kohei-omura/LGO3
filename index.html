@@ -1803,7 +1803,7 @@ function finishWithImage(src, winner, promptData, token) {
       if(regenBtn) regenBtn.disabled = false;
       if(hint) hint.textContent = recovered
         ? '✦ 昨日の未回収分を保存しました'
-        : `✦ 生成完了！(${label})` + (_lastImgInfo ? ` ／ 受信${_lastImgInfo.w}×${_lastImgInfo.h}→${_lastImgInfo.fmt}` : '');
+        : `✦ 生成完了！(${label})` + (_lastImgInfo ? ` ／ ${_lastImgInfo.model} ／ 受信${_lastImgInfo.w}×${_lastImgInfo.h}→${_lastImgInfo.fmt}` : '');
     };
     img.onerror = () => {
       console.warn('[LGO] 画像の表示に失敗しました:', displayUrl);
@@ -1850,7 +1850,7 @@ function finishWithImage(src, winner, promptData, token) {
         }
       }
       thumb = makeThumb(off);
-      _lastImgInfo = { w: off.naturalWidth || 0, h: off.naturalHeight || 0, fmt: (displayUrl.indexOf('image/png') >= 0 ? 'PNG' : 'JPEG'), winner };
+      _lastImgInfo = { w: off.naturalWidth || 0, h: off.naturalHeight || 0, fmt: (displayUrl.indexOf('image/png') >= 0 ? 'PNG' : 'JPEG'), winner, model: (getPollinKey() ? getPollinModel() : '無料') };
     } catch(e) { displayUrl = src; thumb = null; }
     show(displayUrl, thumb || displayUrl, winner);
   };

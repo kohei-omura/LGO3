@@ -1347,11 +1347,23 @@ function toggleFavFilter() {
 }
 
 function deleteHistoryEntry(id) {
-  openDB().then(db => {
+  openDB().then(db => new Promise(res => {
+    // ③修正: ★お気に入りは削除しない（誤タップ防止）。先に★を外す必要がある
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(id);
-    tx.oncomplete = () => renderHistory();
-  });
+    const store = tx.objectStore(STORE_NAME);
+    const g = store.get(id);
+    let blocked = false;
+    g.onsuccess = () => {
+      const rec = g.result;
+      if(rec && rec.fav) { blocked = true; return; } // ★付きは削除ブロック
+      store.delete(id);
+    };
+    tx.oncomplete = () => res(blocked);
+    tx.onerror = () => res(false);
+  })).then(blocked => {
+    if(blocked) { alert('★お気に入りの画像です。削除するには、先に★を外してください。'); }
+    else { renderHistory(); }
+  }).catch(e => console.warn('deleteHistoryEntry:', e));
 }
 
 // 再描画を伴わない静かな削除（200件超の自動整理用）
@@ -1690,18 +1702,34 @@ function generateVariations() {
   const btn = document.getElementById('varBtn');
   if(btn) { btn.disabled = true; btn.textContent = '🎲 3枚生成中…'; }
   _renderVarStrip();
-  let doneCount = 0;
-  const onDone = (i, url, isObj) => {
+  // ②修正: 3枚同時だと無料枠の同時アクセス制限で失敗するため、1枚ずつ順次生成（失敗時は別シードで1回リトライ）
+  let idx = 0;
+  const setBtnProgress = () => { if(btn) btn.textContent = `🎲 生成中… ${Math.min(idx + 1, 3)}/3`; };
+  const finishOne = (i, url, isObj) => {
     _varItems[i] = url ? { url, isObj } : null;
     _renderVarStrip();
-    if(++doneCount === 3) {
+    runNext();
+  };
+  const runNext = () => {
+    if(idx >= seeds.length) {
       _varRunning = false;
       if(btn) { btn.disabled = false; btn.textContent = '🎲 バリエーション生成（3枚から選ぶ）'; }
+      return;
     }
+    const i = idx++;
+    setBtnProgress();
+    _genOneVariation(seeds[i], pd,
+      (url, isObj) => finishOne(i, url, isObj),
+      () => {
+        // 失敗→別シードで1回だけリトライ（連続アクセスを避けるため少し待つ）
+        setTimeout(() => {
+          _genOneVariation(seeds[i] + 4321, pd,
+            (url, isObj) => finishOne(i, url, isObj),
+            () => finishOne(i, null, false));
+        }, 500);
+      });
   };
-  seeds.forEach((sd, i) => _genOneVariation(sd, pd,
-    (url, isObj) => onDone(i, url, isObj),
-    () => onDone(i, null, false)));
+  runNext();
 }
 // 新規生成時に古いバリエーションのサムネを消去し objURL を解放（占い/フリー/画像参照 全モード共通）
 function _clearVariations() {
@@ -1851,7 +1879,7 @@ function finishWithImage(src, winner, promptData, token) {
       if(dlBtn) dlBtn.disabled = false;
       { const _sb=document.getElementById('shareBtn'); if(_sb) _sb.disabled=false; }
       { const _vb=document.getElementById('varBtn'); if(_vb) _vb.disabled=false; } // 機能A: 表示成功でバリエーション可
-      if(regenBtn) regenBtn.disabled = false;
+      if(regenBtn) { regenBtn.disabled = false; regenBtn.textContent = '✦ 再生成'; }
       _renderQualityBadge();
       if(hint) hint.textContent = recovered
         ? '✦ 昨日の未回収分を保存しました'
@@ -2510,13 +2538,32 @@ function init() {
         if(hint) hint.textContent = '✦ 本日の一枚（生成済み）';
       };
       img.onerror = () => {
-        generateImage(promptData, getDailySeed(currentDiv));
+        showReadyToGenerate();
       };
       img.src = todayEntry.imageData;
     } else {
-      generateImage(promptData, getDailySeed(currentDiv));
+      // ①仕様変更: 日付が変わっても自動生成しない（無料枠を無駄に消費しないため）。
+      //  「生成する」ボタンを押したら生成する。以降は「再生成」ボタンになる。
+      showReadyToGenerate();
     }
-  }).catch(() => generateImage(promptData, getDailySeed(currentDiv)));
+  }).catch(() => showReadyToGenerate());
+}
+
+// 未生成状態：自動生成せず「生成する」ボタンを待つ（キー無料枠を温存）
+function showReadyToGenerate() {
+  const loading  = document.getElementById('loadingOverlay');
+  const errorDiv = document.getElementById('errorState');
+  const regenBtn = document.getElementById('regenBtn');
+  const dlBtn    = document.getElementById('dlBtn');
+  if(loading) loading.classList.add('hidden');
+  if(dlBtn) dlBtn.disabled = true;
+  { const _sb=document.getElementById('shareBtn'); if(_sb) _sb.disabled=true; }
+  { const _vb=document.getElementById('varBtn'); if(_vb) _vb.disabled=true; }
+  if(regenBtn) { regenBtn.disabled = false; regenBtn.textContent = '✦ 生成する'; }
+  if(errorDiv) {
+    errorDiv.innerHTML = '<div class="error-icon">✦</div><div class="error-msg">本日の一枚はまだ生成されていません<br><small style="color:var(--muted)">下の「生成する」を押してください<br>（無料枠を温存するため自動生成しません）</small></div>';
+    errorDiv.style.display = 'flex';
+  }
 }
 
 window.onerror = (msg) => { if(typeof msg==='string' && msg.includes('Script error')) return true; };

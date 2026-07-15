@@ -1,0 +1,63 @@
+name: Update calendar (rokuyo & moon age)
+
+on:
+  schedule:
+    # cron は UTC。JST = UTC+9 なので「JSTの時刻 - 9時間」を書く。
+    # v1 の '0 20 1 * *' は「毎月1日 5:00 JST」とコメントされていたが
+    # 実際には 1日20:00 UTC = 2日 5:00 JST で、1日ズレていた。
+    - cron: '0 20 * * 0'   # 毎週月曜 5:00 JST（日曜20:00 UTC）
+  workflow_dispatch:
+    inputs:
+      force_full:
+        description: '全期間を強制再取得する（通常は不要。差分取得で十分）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-calendar
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate calendar.json
+        id: gen
+        env:
+          FORCE_FULL: ${{ inputs.force_full && '1' || '0' }}
+        run: python update_calendar.py
+
+      - name: Commit & push
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add calendar.json
+          if git diff --cached --quiet; then
+            echo 'No changes'; exit 0
+          fi
+          git commit -m "chore: update calendar.json (coverage ${{ steps.gen.outputs.coverage_days }}d, auto)"
+          for i in 1 2 3; do
+            if git push; then exit 0; fi
+            git pull --rebase; sleep 5
+          done
+          exit 1
+
+      # データは必ずコミットしたうえで、カバレッジ不足なら「後から」失敗させて通知する。
+      # （検証を生成ステップ内で失敗させると、取得できた分までコミットされず損になるため）
+      - name: Verify coverage
+        run: |
+          DAYS='${{ steps.gen.outputs.coverage_days }}'
+          echo "今日から連続 ${DAYS} 日先まで確保"
+          if [ "${{ steps.gen.outputs.ok }}" != 'true' ]; then
+            echo "::error::カバレッジ不足: ${DAYS}日 (必要 365日)。取得元の構造変化またはデータ収録上限の可能性があります。"
+            exit 1
+          fi
+          echo "::notice::カバレッジ ${DAYS}日 ✅"

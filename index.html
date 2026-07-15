@@ -409,6 +409,71 @@
 
 const BIRTH = { year:1993, month:4, day:14, hour:6, zodiac:'牡羊座', blood:'B', eto:'酉' };
 
+// ════════════════════════════════════════════════════════════
+//  暦データ実測ソース (修正1)
+//  姉妹アプリ GOV3 が Actions で毎日更新している ajnet.ne.jp 実測値。
+//  同一オリジン(kohei-omura.github.io)なので CORS 不要。
+//  形式: {"days":{"2026-07-14":{"rokuyo":"赤口","moonAge":29.0,"lunar":"6/1"}}}
+//  取得できない/範囲外の日付は内蔵テーブルの現行計算にフォールバックし「※概算」表示。
+// ════════════════════════════════════════════════════════════
+const CAL_URL_LG   = 'https://kohei-omura.github.io/GOV3/calendar.json';
+const CAL_CACHE_KEY= 'lgo_cal_v1';
+const CAL_TTL_MS   = 24 * 3600 * 1000;   // 24時間キャッシュ
+let   LGO_CAL      = null;               // { days:{...}, updated:'...' } | null
+
+function dateKeyLG(date) {
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+
+// 実測値を1件返す。無ければ null（→呼び出し側が現行計算にフォールバック）
+function getCalDay(date) {
+  if(!LGO_CAL || !LGO_CAL.days) return null;
+  const e = LGO_CAL.days[dateKeyLG(date)];
+  if(!e || typeof e.rokuyo !== 'string') return null;
+  return {
+    rokuyo : e.rokuyo,
+    moonAge: (typeof e.moonAge === 'number') ? e.moonAge : null,
+    lunar  : (typeof e.lunar === 'string')   ? e.lunar   : null
+  };
+}
+
+async function loadCalendarLG() {
+  // ① キャッシュが生きていれば通信ゼロ
+  try {
+    const raw = localStorage.getItem(CAL_CACHE_KEY);
+    if(raw) {
+      const c = JSON.parse(raw);
+      if(c && c.t && (Date.now() - c.t) < CAL_TTL_MS && c.d && c.d.days) {
+        LGO_CAL = c.d;
+        return LGO_CAL;
+      }
+    }
+  } catch(e) { /* 破損キャッシュは無視して再取得 */ }
+
+  // ② 実測値を取得（6秒でタイムアウト。失敗しても致命的にしない）
+  try {
+    const ac = ('AbortController' in window) ? new AbortController() : null;
+    const to = ac ? setTimeout(() => ac.abort(), 6000) : null;
+    const res = await fetch(CAL_URL_LG, { cache:'no-cache', signal: ac ? ac.signal : undefined });
+    if(to) clearTimeout(to);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if(!json || !json.days) throw new Error('bad shape');
+    LGO_CAL = json;
+    try { localStorage.setItem(CAL_CACHE_KEY, JSON.stringify({ t: Date.now(), d: json })); } catch(e){}
+    return LGO_CAL;
+  } catch(e) {
+    console.warn('[LGO暦] 実測データ取得失敗 → 内蔵計算にフォールバック:', e && e.message);
+    // ③ 期限切れでも残っていれば使う（オフライン救済）
+    try {
+      const raw = localStorage.getItem(CAL_CACHE_KEY);
+      if(raw) { const c = JSON.parse(raw); if(c && c.d && c.d.days) { LGO_CAL = c.d; return LGO_CAL; } }
+    } catch(e2) {}
+    LGO_CAL = null;
+    return null;
+  }
+}
+
 const LUNAR_DATA_LG = {
   2023:{sf:[1,22],m:[30,30,29,30,29,30,29,30,29,29,30,29,30],lp:2},
   2024:{sf:[2,10],m:[30,29,30,30,29,30,29,30,29,30,29,29],lp:null},
@@ -537,9 +602,84 @@ const GOGYO_COMPAT = {
 
 const KYUSEI_LIST_DAY = ['一白水星','二黒土星','三碧木星','四緑木星','五黄土星','六白金星','七赤金星','八白土星','九紫火星'];
 
+// ════════════════════════════════════════════════════════════
+//  日家九星 (修正2)
+//  標準則: 夏至・冬至に最も近い甲子日を起点とし、
+//          陽遁(冬至側)=一白水星から順行 / 陰遁(夏至側)=九紫火星から逆行。
+//  至日との距離が等しい場合は「至日前の甲子」を優先。
+//  検証: 2026-07-13=三碧木星 / 07-14=二黒土星 / 07-15=一白水星（こよみ・実カレンダー準拠）
+// ════════════════════════════════════════════════════════════
+function epochDayLG(date) {
+  return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
+}
+// 六十干支番号（0=甲子）。検証アンカー: 1970-01-01(epoch 0) → 17 = 辛巳
+function kanshiNoLG(date) {
+  return ((epochDayLG(date) + 17) % 60 + 60) % 60;
+}
+
+// 至点(Meeus 低精度式, 誤差<数分)。戻り値は JD(TD)。june=true で夏至
+const SOLSTICE_TERMS_LG = [
+  [485,324.96,1934.136],[203,337.23,32964.467],[199,342.08,20.186],[182,27.85,445267.112],
+  [156,73.14,45036.886],[136,171.52,22518.443],[77,222.54,65928.934],[74,296.72,3034.906],
+  [70,243.58,9037.513],[58,119.81,33718.147],[52,297.17,150.678],[50,21.02,2281.226],
+  [45,247.54,29929.562],[44,325.15,31555.956],[29,60.93,4443.417],[18,155.12,67555.328],
+  [17,288.79,4562.452],[16,198.04,62894.029],[14,199.76,31436.921],[12,95.39,14577.848],
+  [12,287.11,31931.756],[12,320.81,34777.259],[9,227.73,1222.114],[8,15.45,16859.074]
+];
+function solsticeJdLG(year, june) {
+  const D = Math.PI/180;
+  const Y = (year - 2000) / 1000;
+  const J0 = june
+    ? 2451716.56767 + 365241.62603*Y + 0.00325*Y*Y + 0.00888*Y*Y*Y - 0.00030*Y*Y*Y*Y
+    : 2451900.05952 + 365242.74049*Y - 0.06223*Y*Y - 0.00823*Y*Y*Y + 0.00032*Y*Y*Y*Y;
+  const T = (J0 - 2451545.0) / 36525;
+  const W = 35999.373*T - 2.47;
+  const dl = 1 + 0.0334*Math.cos(W*D) + 0.0007*Math.cos(2*W*D);
+  let S = 0;
+  for(const [A,B,C] of SOLSTICE_TERMS_LG) S += A * Math.cos((B + C*T)*D);
+  return J0 + (0.00001*S)/dl;
+}
+// 至日のJST日付を epochDay(UTC基準の通日) で返す
+function solsticeEpochDayLG(year, june) {
+  const jd = solsticeJdLG(year, june) + 9/24;          // JST
+  return Math.floor(jd + 0.5) - 2440588;               // JD→epochDay
+}
+// 至日に最も近い甲子日の epochDay（等距離なら至日前を優先）
+function nearestKoshiEpochLG(solEp) {
+  // 甲子は kanshiNo(ep) = ((ep+17)%60)==0 → ep ≡ 43 (mod 60)
+  const base = ((solEp - 43) % 60 + 60) % 60;          // 直近の甲子までの経過日数
+  const prev = solEp - base;                            // 至日以前（当日含む）の甲子
+  const next = prev + 60;
+  // 等距離(=30日ずつ)なら至日前を優先
+  return ((solEp - prev) <= (next - solEp)) ? prev : next;
+}
+// キャッシュ（同一年の再計算を避ける）
+const KOSHI_CACHE_LG = {};
+function anchorsForYearLG(y) {
+  if(KOSHI_CACHE_LG[y]) return KOSHI_CACHE_LG[y];
+  const a = [
+    { ep: nearestKoshiEpochLG(solsticeEpochDayLG(y, false)), inton:false }, // 冬至 → 陽遁(一白順行)
+    { ep: nearestKoshiEpochLG(solsticeEpochDayLG(y, true )), inton:true  }  // 夏至 → 陰遁(九紫逆行)
+  ];
+  KOSHI_CACHE_LG[y] = a;
+  return a;
+}
 function getDayKyusei(date) {
-  const ep = Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
-  const name = KYUSEI_LIST_DAY[(ep + 5) % 9];
+  const ep = epochDayLG(date);
+  const y  = date.getFullYear();
+  let cands = [];
+  for(let yy = y-1; yy <= y+1; yy++) cands = cands.concat(anchorsForYearLG(yy));
+  // 当日以前で最も新しい起点を採用
+  const active = cands.filter(a => a.ep <= ep).sort((a,b) => b.ep - a.ep)[0];
+  let name;
+  if(!active) {
+    name = KYUSEI_LIST_DAY[((ep + 5) % 9 + 9) % 9];    // 理論上到達しない保険
+  } else {
+    const n = ep - active.ep;
+    const idx = active.inton ? ((8 - n) % 9 + 9) % 9   // 陰遁: 九紫(idx8)から逆行
+                             : ((0 + n) % 9 + 9) % 9;  // 陽遁: 一白(idx0)から順行
+    name = KYUSEI_LIST_DAY[idx];
+  }
   const elem = KYUSEI_ELEMENT[name] || '土';
   return { name, elem };
 }
@@ -668,11 +808,21 @@ function getMoonSign(date) {
   return{name:ZODIAC_JP[idx],lon:Math.round(lon*10)/10,deg:Math.round((lon%30)*10)/10};
 }
 
-function getAscendant(date) {
-  const JD=date.getTime()/86400000+2440587.5;
+// ════════════════════════════════════════════════════════════
+//  上昇星座 ASC (修正4)
+//  旧版は JST をそのまま世界時として扱い、かつ観測地を現在地(宮崎)にしていた。
+//  正: 出生時刻 1993-04-14 06:18 JST から9時間引いて UT(1993-04-13 21:18) に変換し、
+//      観測地は出生地の横浜(北緯35.45・東経139.63)に固定する。
+//  検証: ASC=45.9° → 牡牛座（許容±3°）
+// ════════════════════════════════════════════════════════════
+const BIRTH_UT_MS   = Date.UTC(1993, 3, 14, 6, 18, 0) - 9*3600000; // JST→UT
+const BIRTH_PLACE_LG= { lon: 139.63, lat: 35.45, label: '横浜' };
+
+function getAscendantAt(utcMs, geoLon, geoLat) {
+  const JD=utcMs/86400000+2440587.5;
   const T=(JD-2451545.0)/36525;
   let GMST=280.46061837+360.98564736629*(JD-2451545.0)+0.000387933*T*T;
-  const lon=131.42, lat=31.91*Math.PI/180;
+  const lon=geoLon, lat=geoLat*Math.PI/180;
   const LST=((GMST+lon)%360+360)%360;
   const eps=(23.439291111-0.013004167*T)*Math.PI/180;
   const RAMC=LST*Math.PI/180;
@@ -681,6 +831,9 @@ function getAscendant(date) {
   if(Math.cos(RAMC)<0) asc=(asc+180)%360;
   return{name:ZODIAC_JP[Math.floor(asc/30)%12],deg:Math.round(asc*10)/10};
 }
+
+// 出生図のASCは不変なので起動時に一度だけ確定させる
+const BIRTH_ASC = getAscendantAt(BIRTH_UT_MS, BIRTH_PLACE_LG.lon, BIRTH_PLACE_LG.lat);
 
 const GONG_NAMES=['子宮','丑宮','寅宮','卯宮','辰宮','巳宮','午宮','未宮','申宮','酉宮','戌宮','亥宮'];
 const GOKOTON_GONG={甲:0,己:0,乙:2,庚:2,丙:4,辛:4,丁:6,壬:6,戊:8,癸:8};
@@ -700,8 +853,21 @@ function getZiwei(bMonth,bDay,bHour,bMin,yearStem) {
   };
 }
 
-const CHUKUSATSU={甲:['戌','亥'],乙:['戌','亥'],丙:['申','酉'],丁:['申','酉'],戊:['午','未'],己:['午','未'],庚:['辰','巳'],辛:['辰','巳'],壬:['寅','卯'],癸:['寅','卯']};
-function getTenchusatsu(stem){ return(CHUKUSATSU[stem]||['—','—']).join('・')+'空亡'; }
+// ════════════════════════════════════════════════════════════
+//  天中殺（空亡）(修正3)
+//  旧版は「年柱の天干」から引く誤った表を使っていた。
+//  正: 日柱の六十干支番号から旬(10区切り)を求め、その旬に含まれない2支が空亡。
+//    甲子旬(0-9)=戌亥 / 甲戌旬(10-19)=申酉 / 甲申旬(20-29)=午未
+//    甲午旬(30-39)=辰巳 / 甲辰旬(40-49)=寅卯 / 甲寅旬(50-59)=子丑
+//  検証: 1993-04-14 → 日柱乙丑(No.1) → 甲子旬 → 戌・亥天中殺
+// ════════════════════════════════════════════════════════════
+const JUN_KUBOU_LG = [['戌','亥'],['申','酉'],['午','未'],['辰','巳'],['寅','卯'],['子','丑']];
+function getTenchusatsuByKanshi(kanshiNo){
+  const n = ((kanshiNo % 60) + 60) % 60;
+  return JUN_KUBOU_LG[Math.floor(n / 10)].join('・');
+}
+// 出生日(1993-04-14)の日柱から確定。以後不変。
+const BIRTH_TENCHUSATSU = getTenchusatsuByKanshi(kanshiNoLG(new Date(1993, 3, 14)));
 
 // ════════════════════════════════════════════════════════════
 //  数秘術エンジン v3 ── 関係性モデル
@@ -881,8 +1047,15 @@ function initStyleUI() {
 // ════════════════════════════════════════
 function computeToday() {
   const now        = new Date();
-  const rokuyo     = getRokuyo(now);
-  const moonAgeJST = getMoonAgeJST();
+  // ── 修正1: 六曜・月齢・旧暦は実測データ(calendar.json)を最優先。取得不可なら現行計算＋「※概算」
+  const cal        = getCalDay(now);
+  const calOk      = !!(cal && cal.rokuyo);
+  const isApprox   = !calOk;
+  const rokuyo     = calOk ? cal.rokuyo : getRokuyo(now);
+  const moonAgeJST = (calOk && cal.moonAge !== null) ? cal.moonAge : getMoonAgeJST();
+  const lunarStr   = (calOk && cal.lunar)
+    ? cal.lunar
+    : (() => { const l = solarToLunarLG(now.getFullYear(), now.getMonth()+1, now.getDate()); return `${l.month}/${l.day}`; })();
   const moon       = { ...getMoonPhase(moonAgeJST), age: moonAgeJST };
   const pillar     = getDayPillar(now);
   const yearPillar = getYearPillar(now);
@@ -892,19 +1065,20 @@ function computeToday() {
   const kyusei     = getDailyKyusei(now);
   const kyuseiInfo = getKyuseiDayScore(now);
   const moonSign   = getMoonSign(now);
-  const ascendant  = getAscendant(now);
+  const ascendant  = BIRTH_ASC;                      // 修正4: 出生図固定（横浜・UT変換済み）
   const BIRTH_YR   = getYearPillar(new Date(1993,3,14));
   const ziwei      = getZiwei(4,14,6,18,BIRTH_YR.stem);
   const numerology = getNumerologyDay(now);
   const tsuhenDay  = getTsuhensei('乙', pillar.stem);
-  const tenchusatsu= getTenchusatsu(BIRTH_YR.stem);
+  const tenchusatsu= BIRTH_TENCHUSATSU;              // 修正3: 日柱の旬から算出
   const score      = calcScore(rokuyo, moon, pillar, now);
   const element    = BIRTH_ELEM.element;
   const elemLabel  = BIRTH_ELEM.label;
   const luckyColors= LUCKY_COLORS[element] || LUCKY_COLORS['金'];
   return { now, rokuyo, moon, pillar, yearPillar, monthPillar, hourPillar,
            tarot, kyusei, kyuseiInfo, moonSign, ascendant, ziwei, numerology,
-           tsuhenDay, tenchusatsu, score, element, elemLabel, luckyColors };
+           tsuhenDay, tenchusatsu, score, element, elemLabel, luckyColors,
+           lunar: lunarStr, isApprox, ascPlace: BIRTH_PLACE_LG.label };
 }
 
 // ════════════════════════════════════════
@@ -913,13 +1087,19 @@ function computeToday() {
 function updateUI(div) {
   const { now, rokuyo, moon, pillar, yearPillar, monthPillar, hourPillar, tarot, kyusei,
           kyuseiInfo, moonSign, ascendant, ziwei, numerology, tsuhenDay, tenchusatsu,
-          score, element, elemLabel, luckyColors } = div;
+          score, element, elemLabel, luckyColors, lunar, isApprox, ascPlace } = div;
+
+  const approxTag = isApprox
+    ? '<span style="font-size:.58rem;color:var(--muted);margin-left:3px;vertical-align:super">※概算</span>'
+    : '';
 
   const dow = '日月火水木金土'[now.getDay()];
   document.getElementById('headerDate').textContent =
     `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日（${dow}）`;
 
-  document.getElementById('fb-rokuyo').textContent = rokuyo;
+  const fbRokuyoEl = document.getElementById('fb-rokuyo');
+  fbRokuyoEl.innerHTML = rokuyo + approxTag;
+  fbRokuyoEl.title = isApprox ? '実測暦データ未取得のため内蔵計算による概算値' : '実測暦データ(ajnet)準拠';
   document.getElementById('fb-moon').textContent   = moon.icon + ' ' + moon.name;
   document.getElementById('fb-kyusei').textContent = kyusei;
 
@@ -956,8 +1136,8 @@ function updateUI(div) {
 
   document.getElementById('divGrid').innerHTML = `
     <div class="div-item"><div class="div-item-label">📅 六曜</div>
-      <div class="div-item-value" style="color:${rokuyoData.color}">${rokuyo}</div>
-      <div class="div-item-sub">${rokuyoDesc[rokuyo]||rokuyoData.adj+'な日'}</div></div>
+      <div class="div-item-value" style="color:${rokuyoData.color}">${rokuyo}${approxTag}</div>
+      <div class="div-item-sub">旧暦${lunar} ／ ${rokuyoDesc[rokuyo]||rokuyoData.adj+'な日'}</div></div>
     <div class="div-item"><div class="div-item-label">${moon.icon} 月相・月齢</div>
       <div class="div-item-value" style="color:var(--violet)">${moon.name}</div>
       <div class="div-item-sub">月齢${moon.age}日 ${moonDesc[moon.name]||''}</div></div>
@@ -975,7 +1155,7 @@ function updateUI(div) {
       <div class="div-item-sub">${BIRTH_ELEM.yinLabel} 天中殺:${tenchusatsu}</div></div>
     <div class="div-item"><div class="div-item-label">⭐ 西洋占星術</div>
       <div class="div-item-value" style="color:var(--violet)">月:${moonSign.name}</div>
-      <div class="div-item-sub">上昇(宮崎):${ascendant.name} 太陽:牡羊座</div></div>
+      <div class="div-item-sub">上昇(${ascPlace}):${ascendant.name} 太陽:牡羊座</div></div>
     <div class="div-item"><div class="div-item-label">🌸 紫微斗数</div>
       <div class="div-item-value" style="color:var(--rose)">${ziwei.mingName}</div>
       <div class="div-item-sub">金四局 紫微星:午宮</div></div>
@@ -1266,6 +1446,15 @@ function buildPrompt(div) {
   const negPrompt = 'nude, nsfw, bad anatomy, extra limbs, blurry, low quality, watermark, ugly, deformed, revealing, exposed';
 
   const theme = `${element}(${BIRTH_ELEM.label})・${rokuyo}・${moon.name}・${tarot.n}・数${numerology.universalNum}`;
+
+  // 修正5: 修正値がプロンプト経路に流れていることを目視確認するための1行ログ
+  console.info('[LGO鑑定]', {
+    rokuyo,
+    kyuseiDay  : kyuseiInfo ? kyuseiInfo.dayKyusei : null,
+    tenchusatsu: div.tenchusatsu,
+    asc        : div.ascendant ? `${div.ascendant.name}(${div.ascendant.deg}°)` : null,
+    score
+  });
 
   return { prompt: fullPrompt, negative: negPrompt, theme, elemLabel, style, tarotName: tarot.n, dateSeed: ds, mode: 'oracle' };
 }
@@ -2499,10 +2688,13 @@ function closeModal(e) {
 // ════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════
-function init() {
+async function init() {
   initStyleUI();
   setImgQuality(getImgQuality());
   setPollinModel(getPollinModel());
+
+  // 修正1: 実測暦データを先に確定させてから鑑定を計算する（失敗しても続行）
+  await loadCalendarLG();
 
   try {
     const div = computeToday();
@@ -2579,7 +2771,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pageshow', tryResumeOnReturn);
 window.addEventListener('focus', tryResumeOnReturn);
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => { init().catch(e => console.error('init error:', e)); });
 
 // ════════════════════════════════════════
 //  PWA: Service Worker 登録

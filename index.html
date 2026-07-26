@@ -307,6 +307,7 @@
     <div class="free-section">
       <label class="free-neg-label">✦ 完全フリープロンプト（占いとは独立して生成）</label>
       <textarea class="free-textarea" id="freePrompt" placeholder="例: beautiful girl in red dress, sunset beach, long dark hair, smile, photorealistic, 8k..."></textarea>
+      <div id="freeCount" style="text-align:right;font-size:11px;color:#8a8496;margin-top:4px">0/900文字</div>
       <label class="free-neg-label">ネガティブプロンプト（除外したい要素）</label>
       <textarea class="free-textarea" id="freeNeg" style="min-height:50px" placeholder="例: nsfw, blurry, ugly, bad anatomy..."></textarea>
       <div class="style-row" style="margin-top:8px">
@@ -1737,28 +1738,100 @@ function setImgQuality(q) {
     b.classList.toggle('active', b.dataset.q === q));
 }
 
+
+/* ════════════════════════════════════════════════════════════
+   v4 生成品質の統一（プロンプト上限・品質接頭辞・URL長）
+     PROMPT_MAX   : プロンプト本文の上限。切り詰めはURL組み立ての1箇所だけで行う。
+     URL_MAX      : 組み立て後のURL全長の上限。超える時だけ末尾から削る。
+     QUALITY_PREFIX: 占い生成とフリー生成で共通の品質接頭辞。
+   ════════════════════════════════════════════════════════════ */
+var PROMPT_MAX = 900;
+var URL_MAX = 1800;
+var QUALITY_PREFIX = {
+  anime: 'masterpiece, best quality, ultra detailed, highly detailed, 8k, sharp focus, professional lighting, safe, sfw, anime illustration,',
+  real:  'masterpiece, best quality, ultra detailed, photorealistic, RAW photo, 8k uhd, sharp focus, professional lighting, depth of field, safe, sfw,'
+};
+
+/* プロンプト本文を PROMPT_MAX に丸める（切り詰めはここだけ） */
+function clampPrompt(p) {
+  p = String(p || '');
+  return p.length > PROMPT_MAX ? p.slice(0, PROMPT_MAX) : p;
+}
+
+/* ネガティブを本文末尾にも付ける後方互換の保険。
+   Pollinations が negative クエリを無視する実装だった場合にも効かせるため。 */
+function appendNoTag(prompt, negative) {
+  var n = String(negative || '').trim();
+  if (!n) return prompt;
+  return prompt + ' --no ' + n;
+}
+
+/* negative クエリ文字列（非空のときだけ付く） */
+function negQuery(negative) {
+  var n = String(negative || '').trim();
+  if (!n) return '';
+  return '&negative=' + encodeURIComponent(n.slice(0, 300));
+}
+
+/* URL全体が URL_MAX を超える場合のみ、プロンプト末尾から段階的に削って収める。
+   ユーザー入力の先頭は必ず残る（末尾からのみ削るため）。 */
+function fitUrl(buildFn, prompt) {
+  var p = clampPrompt(prompt);
+  var url = buildFn(p);
+  var guard = 0;
+  while (url.length > URL_MAX && p.length > 60 && guard < 40) {
+    var cut = Math.max(40, Math.floor(p.length * 0.12));
+    p = p.slice(0, p.length - cut);
+    url = buildFn(p);
+    guard++;
+  }
+  return url;
+}
+
+/* 2-E デバッグ：生成時の実パラメータを1行出す（keyは伏字） */
+function logGen(mode, prompt, negative, url) {
+  try {
+    console.info('[LGO生成]', {
+      mode: mode,
+      promptLen: String(prompt || '').length,
+      negLen: String(negative || '').length,
+      url: String(url || '').replace(/([?&]key=)[^&]*/, '$1***')
+    });
+  } catch (e) {}
+}
+
 function buildPollinationsUrl(promptData, seed) {
   const ql = getImgQuality();
   const q = IMG_QUALITY_PRESETS[ql] || IMG_QUALITY_PRESETS.balanced;
-  const prompt = promptData.prompt || '';
-  const trimmed = prompt.length > 350 ? prompt.slice(0, 350) : prompt;
-  const encoded = encodeURIComponent(trimmed);
+  const neg = (promptData.negative || '').trim();
+  // v4: 切り詰めはここ1箇所（PROMPT_MAX）。ネガは本文末尾(--no)とクエリの両方に付ける。
+  const base = appendNoTag(promptData.prompt || '', neg);
   const pk = getPollinKey();
   if(pk) {
     const model = getPollinModel();
     const sz = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
-    let kurl = `https://gen.pollinations.ai/image/${encoded}`
-         + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
-         + `&nofeed=true&nologo=true`
-         + `&key=${encodeURIComponent(pk)}`; // 認証をURLでも付与（ヘッダーのみだと gen 側が高解像度を返さず0.6MPになるため復元）。Authorizationヘッダーも併送。
-    if(getSafeMode()) kurl += '&safe=true'; // 🛡セーフティ強化モードON時のみ付与（人物検閲を回避）
-    if(getEnhanceMode()) kurl += '&enhance=true'; // ✨精細強化ON時のみ
+    const kurl = fitUrl(function(p){
+      let u = `https://gen.pollinations.ai/image/${encodeURIComponent(p)}`
+           + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
+           + `&nofeed=true&nologo=true`
+           + `&key=${encodeURIComponent(pk)}`; // 認証をURLでも付与（gen側が高解像度を返すため）
+      u += negQuery(neg);
+      if(getSafeMode()) u += '&safe=true';
+      if(getEnhanceMode()) u += '&enhance=true';
+      return u;
+    }, base);
+    logGen('keyed', base, neg, kurl);
     return kurl;
   }
-  let url = `https://image.pollinations.ai/prompt/${encoded}`
+  const url = fitUrl(function(p){
+    let u = `https://image.pollinations.ai/prompt/${encodeURIComponent(p)}`
           + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
           + `&nologo=true&nofeed=true&private=true`;
-  if(q.enhance || getEnhanceMode()) url += '&enhance=true';
+    u += negQuery(neg);
+    if(q.enhance || getEnhanceMode()) u += '&enhance=true';
+    return u;
+  }, base);
+  logGen('nokey(auto)', base, neg, url);
   return url;
 }
 
@@ -1767,13 +1840,17 @@ function buildPollinationsUrl(promptData, seed) {
 function buildNoKeyPollinationsUrl(promptData, seed) {
   const ql = getImgQuality();
   const q = IMG_QUALITY_PRESETS[ql] || IMG_QUALITY_PRESETS.balanced;
-  const prompt = promptData.prompt || '';
-  const trimmed = prompt.length > 350 ? prompt.slice(0, 350) : prompt;
-  const encoded = encodeURIComponent(trimmed);
-  let url = `https://image.pollinations.ai/prompt/${encoded}`
+  const neg = (promptData.negative || '').trim();
+  const base = appendNoTag(promptData.prompt || '', neg);
+  const url = fitUrl(function(p){
+    let u = `https://image.pollinations.ai/prompt/${encodeURIComponent(p)}`
           + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
           + `&nologo=true&nofeed=true&private=true`;
-  if(q.enhance || getEnhanceMode()) url += '&enhance=true';
+    u += negQuery(neg);
+    if(q.enhance || getEnhanceMode()) u += '&enhance=true';
+    return u;
+  }, base);
+  logGen('nokey', base, neg, url);
   return url;
 }
 
@@ -1811,17 +1888,21 @@ let _lastKeyedError = null; // 直近のkeyed失敗理由（診断表示用）
 function buildKeyedUrlModel(promptData, seed, modelOverride) {
   const ql = getImgQuality();
   const pk = getPollinKey();
-  const prompt = promptData.prompt || '';
-  const trimmed = prompt.length > 350 ? prompt.slice(0, 350) : prompt;
-  const encoded = encodeURIComponent(trimmed);
+  const neg = (promptData.negative || '').trim();
+  const base = appendNoTag(promptData.prompt || '', neg);
   const model = modelOverride || getPollinModel();
   const sz = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
-  let kurl = `https://gen.pollinations.ai/image/${encoded}`
-       + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
-       + `&nofeed=true&nologo=true`
-       + `&key=${encodeURIComponent(pk)}`;
-  if(getSafeMode()) kurl += '&safe=true';
-  if(getEnhanceMode()) kurl += '&enhance=true';
+  const kurl = fitUrl(function(p){
+    let u = `https://gen.pollinations.ai/image/${encodeURIComponent(p)}`
+         + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
+         + `&nofeed=true&nologo=true`
+         + `&key=${encodeURIComponent(pk)}`;
+    u += negQuery(neg);
+    if(getSafeMode()) u += '&safe=true';
+    if(getEnhanceMode()) u += '&enhance=true';
+    return u;
+  }, base);
+  logGen('keyed(model=' + model + ')', base, neg, kurl);
   return kurl;
 }
 // 結果画面の常設「品質バッジ」：キー付きネイティブ か 無料fluxアップスケール かを明示
@@ -2256,9 +2337,14 @@ function generateImage(promptData, seed) {
   //      2026-07-04 実測: width/height/seed付きが500でも、プロンプトのみは正常生成できる
   const tryPlainThenHorde = () => {
     if(done) return;
-    const plainUrl = 'https://image.pollinations.ai/prompt/' +
-      encodeURIComponent(((promptData.prompt||'').length > 350 ? promptData.prompt.slice(0,350) : (promptData.prompt||''))) +
-      `?width=832&height=1216&seed=${Math.floor(Math.random()*1000000)}&nologo=true&nofeed=true`;
+    const _pnNeg = (promptData.negative || '').trim();
+    const _pnBase = appendNoTag(promptData.prompt || '', _pnNeg);
+    const _pnSeed = Math.floor(Math.random()*1000000);
+    const plainUrl = fitUrl(function(p){
+      return 'https://image.pollinations.ai/prompt/' + encodeURIComponent(p) +
+        `?width=832&height=1216&seed=${_pnSeed}&nologo=true&nofeed=true` + negQuery(_pnNeg);
+    }, _pnBase);
+    logGen('plain', _pnBase, _pnNeg, plainUrl);
     if(hint) hint.textContent = '✦ 簡易モードで再試行中…（API障害対応）';
     const p2 = new Image(); p2.crossOrigin = 'anonymous';
     p2.onload  = () => { if(!done) win(plainUrl, 'Pollinations簡易'); };
@@ -2505,17 +2591,35 @@ function switchTab(tab) {
 // ════════════════════════════════════════
 //  FREE PROMPT GENERATE
 // ════════════════════════════════════════
+
+/* v4 フリー入力の文字数カウンタ（PROMPT_MAX 超過は赤字） */
+function updateFreeCount(){
+  var t=document.getElementById('freePrompt'), c=document.getElementById('freeCount');
+  if(!t||!c) return;
+  var n=(t.value||'').length;
+  c.textContent=n+'/'+PROMPT_MAX+'文字'+(n>PROMPT_MAX?'（超過分は送信時に末尾から調整されます）':'');
+  c.style.color=(n>PROMPT_MAX)?'#ff6b6b':'#8a8496';
+}
+(function(){
+  function bind(){
+    var t=document.getElementById('freePrompt');
+    if(t&&!t.__cntBound){ t.__cntBound=1; t.addEventListener('input',updateFreeCount); updateFreeCount(); }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',bind);
+  else bind();
+})();
+
 function generateFree() {
   const userPrompt = (document.getElementById('freePrompt')?.value || '').trim();
   if(!userPrompt) { alert('プロンプトを入力してください'); return; }
   const userNeg = (document.getElementById('freeNeg')?.value || '').trim()
     || 'nude, nsfw, bad anatomy, ugly, deformed, blurry, watermark, revealing';
 
-  const prefix = freeStyle === 'anime'
-    ? 'masterpiece, best quality, safe, sfw, anime illustration,'
-    : 'masterpiece, best quality, safe, sfw, RAW photo, photorealistic,';
+  // v4: 占い生成と同じ品質接頭辞を使う（画質の非対称を解消）
+  const prefix = (freeStyle === 'anime') ? QUALITY_PREFIX.anime : QUALITY_PREFIX.real;
 
-  const combinedPrompt = (prefix + ' ' + userPrompt).slice(0, 380);
+  // v4: ここでは切り詰めない。丸めはURL組み立て側（PROMPT_MAX）の1箇所だけ。
+  const combinedPrompt = prefix + ' ' + userPrompt;
 
   const promptData = {
     prompt:   combinedPrompt,

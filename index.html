@@ -1749,7 +1749,7 @@ var PROMPT_MAX = 900;
 var URL_MAX = 1800;
 var QUALITY_PREFIX = {
   anime: 'masterpiece, best quality, ultra detailed, highly detailed, 8k, sharp focus, professional lighting, safe, sfw, anime illustration,',
-  real:  'masterpiece, best quality, ultra detailed, photorealistic, RAW photo, 8k uhd, sharp focus, professional lighting, depth of field, safe, sfw,'
+  real:  'masterpiece, best quality, ultra detailed, photorealistic, RAW photo, 8k uhd, sharp focus, crisp details, professional lighting, safe, sfw,'
 };
 
 /* プロンプト本文を PROMPT_MAX に丸める（切り詰めはここだけ） */
@@ -1760,10 +1760,12 @@ function clampPrompt(p) {
 
 /* ネガティブを本文末尾にも付ける後方互換の保険。
    Pollinations が negative クエリを無視する実装だった場合にも効かせるため。 */
+/* v4.1 修正：ネガティブは本文に混ぜない。
+   Pollinations は '--no' 構文を解釈しないため、末尾に付けた
+   「blurry, deformed, ugly …」がそのまま description（描く指示）として
+   読まれ、ぼやけた絵が出ていた。ネガは negative クエリのみで渡す。 */
 function appendNoTag(prompt, negative) {
-  var n = String(negative || '').trim();
-  if (!n) return prompt;
-  return prompt + ' --no ' + n;
+  return String(prompt || '');
 }
 
 /* negative クエリ文字列（非空のときだけ付く） */

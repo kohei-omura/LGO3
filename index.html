@@ -6,29 +6,40 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>✨ Lucky Girl Oracle v14</title>
+<title>✨ Lucky Girl Oracle v15</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0d0b1a">
+<meta name="description" content="毎日の占い(15占術統合)から、その日の運気の女の子をAI生成するデイリー占いアプリ。">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="運気の女神">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="apple-touch-startup-image" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash-1320x2868.png">
-<link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash-1290x2796.png">
-<link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash-1284x2778.png">
-<link rel="apple-touch-startup-image" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash-1206x2622.png">
-<link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash-1179x2556.png">
-<link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash-1170x2532.png">
-<link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash-1125x2436.png">
-<link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash-1242x2688.png">
-<link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="splash-828x1792.png">
-<link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="splash-750x1334.png">
-<link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash-1242x2208.png">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+
+<!-- アイコン -->
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="assets/icons/icon-512.png">
+
+<!-- iOS スプラッシュ (assets/splash/<幅>x<高>.png ── 端末の論理解像度×DPRで自動選択) -->
+<link rel="apple-touch-startup-image" media="(device-width:440px) and (device-height:956px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="assets/splash/1320x2868.png">
+<link rel="apple-touch-startup-image" media="(device-width:430px) and (device-height:932px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="assets/splash/1290x2796.png">
+<link rel="apple-touch-startup-image" media="(device-width:428px) and (device-height:926px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="assets/splash/1284x2778.png">
+<link rel="apple-touch-startup-image" media="(device-width:402px) and (device-height:874px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="assets/splash/1206x2622.png">
+<link rel="apple-touch-startup-image" media="(device-width:393px) and (device-height:852px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="assets/splash/1179x2556.png">
+<link rel="apple-touch-startup-image" media="(device-width:390px) and (device-height:844px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="assets/splash/1170x2532.png">
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:812px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="assets/splash/1125x2436.png">
+<link rel="apple-touch-startup-image" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="assets/splash/1242x2688.png">
+<link rel="apple-touch-startup-image" media="(device-width:414px) and (device-height:896px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)" href="assets/splash/828x1792.png">
+<link rel="apple-touch-startup-image" media="(device-width:414px) and (device-height:736px) and (-webkit-device-pixel-ratio:3) and (orientation:portrait)" href="assets/splash/1242x2208.png">
+<link rel="apple-touch-startup-image" media="(device-width:375px) and (device-height:667px) and (-webkit-device-pixel-ratio:2) and (orientation:portrait)" href="assets/splash/750x1334.png">
+
+<!-- 生成API/フォントへ先行接続してTTFBを短縮 -->
+<link rel="preconnect" href="https://image.pollinations.ai" crossorigin>
+<link rel="preconnect" href="https://gen.pollinations.ai" crossorigin>
+<link rel="dns-prefetch" href="https://stablehorde.net">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;700&family=Cinzel+Decorative:wght@400;700&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;700&family=Cinzel+Decorative&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --ink:    #0d0b1a;
@@ -129,7 +140,7 @@
   .var-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
   .var-pick { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.6); color:#fff; font-size:.58rem; text-align:center; padding:3px 0; letter-spacing:.03em; }
   .var-fail { color: var(--muted); }
-  .quality-badge { margin: 10px 20px 0; padding: 8px 12px; border-radius: 10px; font-size: .72rem; line-height: 1.5; text-align: center; border: 1px solid var(--line); }
+  .quality-badge { margin: 10px 20px 0; padding: 8px 12px; border-radius: 10px; font-size: .72rem; line-height: 1.5; text-align: center; border: 1px solid var(--border); }
   .quality-badge.native { color: var(--gold); border-color: rgba(232,201,106,.45); background: rgba(232,201,106,.08); }
   .quality-badge.free { color: var(--muted); background: rgba(255,255,255,.03); }
   .quality-badge b { color: inherit; }
@@ -220,6 +231,7 @@
   .history-section { animation: fadeUp .6s .3s ease both; }
   .lucky-tags { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 14px; }
   .lucky-tag { font-size: .65rem; padding: 3px 10px; border-radius: 20px; border: 1px solid; letter-spacing: .04em; }
+  .hist-more { grid-column: 1/-1; margin-top: 4px; padding: 11px; background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.32); border-radius: 12px; color: var(--violet); font-size: .76rem; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
   .no-history { text-align: center; padding: 30px; color: var(--muted); font-size: .78rem; }
   .gen-status { font-size: .72rem; color: var(--gold); text-align: center; padding: 6px 12px; background: rgba(232,201,106,.08); border-radius: 8px; margin: 0 20px 12px; display: none; }
   .gen-status.show { display: block; }
@@ -250,7 +262,7 @@
       <span class="image-theme-badge" id="themeLabel">—</span>
     </div>
     <div class="image-wrap">
-      <img class="main-image" id="mainImg" alt="今日の運気の女の子" crossorigin="anonymous">
+      <img class="main-image" id="mainImg" alt="今日の運気の女の子" crossorigin="anonymous" decoding="async">
       <div class="loading-overlay" id="loadingOverlay">
         <div class="loading-icon"></div>
         <div class="loading-text">星が囁いています…</div>
@@ -325,7 +337,7 @@
         <div class="upload-icon">📁</div>
         <div class="upload-text">タップして画像を選択<br><small>JPG・PNG・WEBP対応</small></div>
       </div>
-      <img class="upload-preview" id="uploadPreview">
+      <img class="upload-preview" id="uploadPreview" alt="参照画像プレビュー" decoding="async">
       <div class="strength-row">
         <span class="strength-label">参照強度</span>
         <input type="range" class="strength-slider" id="strengthSlider" min="0.3" max="0.9" step="0.05" value="0.6" oninput="document.getElementById('strengthVal').textContent=this.value">
@@ -395,7 +407,7 @@
 
 <div class="modal-overlay" id="histModal" onclick="closeModal(event)">
   <div class="modal-inner">
-    <img class="modal-img" id="modalImg">
+    <img class="modal-img" id="modalImg" alt="履歴の画像" decoding="async">
     <div class="modal-info">
       <div class="modal-date" id="modalDate"></div>
       <div class="modal-theme" id="modalTheme"></div>
@@ -407,8 +419,6 @@
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
 // ════════════════════════════════════════
-
-const BIRTH = { year:1993, month:4, day:14, hour:6, zodiac:'牡羊座', blood:'B', eto:'酉' };
 
 // ════════════════════════════════════════════════════════════
 //  暦データ実測ソース (修正1)
@@ -527,19 +537,13 @@ function getRokuyo(date) {
 // （ajnet.ne.jp 暦・Star Walk と一致: 6/23=8.0, 6/30=15.0）
 const BASE_NEWMOON_MS = Date.UTC(2026,5,15,0,0,0) - 9*3600000; // 2026-06-15 0:00 JST
 const SYNODIC_LG = 29.53058867;
-function getMoonAge(ts) { // ts = JST午前0時に対応するUTCミリ秒
+function getMoonAgeJST(now = new Date()) {
+  // ts = JST午前0時に対応するUTCミリ秒
+  const ts = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - 9*3600000;
   let age = ((ts - BASE_NEWMOON_MS) / 86400000) % SYNODIC_LG;
   if(age < 0) age += SYNODIC_LG;
-  return { age };
-}
-
-function getMoonAgeJST() {
-  const now = new Date();
-  const jstMidnightMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - 9*3600000;
-  let raw = getMoonAge(jstMidnightMs).age;
-  raw = Math.round(raw * 10) / 10;
-  if(raw >= SYNODIC_LG) raw = 0;
-  return raw;
+  age = Math.round(age * 10) / 10;
+  return age >= SYNODIC_LG ? 0 : age;
 }
 
 // 月の呼び名 = starwalk.space(Star Walk)の8フェーズ定義に準拠
@@ -600,8 +604,6 @@ const GOGYO_COMPAT = {
   '火': { '木':8, '火':6, '土':-2, '水':-5, '金':-4 },
   '土': { '火':8, '土':6, '金':-2, '木':-4, '水':-3 },
 };
-
-const KYUSEI_LIST_DAY = ['一白水星','二黒土星','三碧木星','四緑木星','五黄土星','六白金星','七赤金星','八白土星','九紫火星'];
 
 // ════════════════════════════════════════════════════════════
 //  日家九星 (修正2)
@@ -674,12 +676,12 @@ function getDayKyusei(date) {
   const active = cands.filter(a => a.ep <= ep).sort((a,b) => b.ep - a.ep)[0];
   let name;
   if(!active) {
-    name = KYUSEI_LIST_DAY[((ep + 5) % 9 + 9) % 9];    // 理論上到達しない保険
+    name = KYUSEI_LIST[((ep + 5) % 9 + 9) % 9];    // 理論上到達しない保険
   } else {
     const n = ep - active.ep;
     const idx = active.inton ? ((8 - n) % 9 + 9) % 9   // 陰遁: 九紫(idx8)から逆行
                              : ((0 + n) % 9 + 9) % 9;  // 陽遁: 一白(idx0)から順行
-    name = KYUSEI_LIST_DAY[idx];
+    name = KYUSEI_LIST[idx];
   }
   const elem = KYUSEI_ELEMENT[name] || '土';
   return { name, elem };
@@ -699,10 +701,6 @@ function getKyuseiDayScore(now) {
   const dScore = compat[dElem] || 0;
   const total  = Math.round((yScore * 1 + mScore * 2 + dScore * 3) / 6);
   return { yearBoard, monthBoard, dayKyusei: dayKyusei.name, yElem, mElem, dElem, dScore, total };
-}
-
-function getDailyKyusei(date) {
-  return BIRTH_KYUSEI;
 }
 
 const STEMS   = ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'];
@@ -732,6 +730,7 @@ function getBirthElement(birthYear, birthMonth, birthDay) {
 }
 
 const BIRTH_ELEM = getBirthElement(1993, 4, 14);
+const BIRTH_DATE = new Date(1993, 3, 14);
 
 function getYearPillar(date) {
   const y=date.getFullYear(), m=date.getMonth()+1, d=date.getDate();
@@ -837,13 +836,13 @@ function getAscendantAt(utcMs, geoLon, geoLat) {
 const BIRTH_ASC = getAscendantAt(BIRTH_UT_MS, BIRTH_PLACE_LG.lon, BIRTH_PLACE_LG.lat);
 
 const GONG_NAMES=['子宮','丑宮','寅宮','卯宮','辰宮','巳宮','午宮','未宮','申宮','酉宮','戌宮','亥宮'];
-const GOKOTON_GONG={甲:0,己:0,乙:2,庚:2,丙:4,辛:4,丁:6,壬:6,戊:8,癸:8};
 
-function getZiwei(bMonth,bDay,bHour,bMin,yearStem) {
-  const LUNAR_MONTH = 3;
+// 出生時刻(6:18)と年干だけで確定するため、起動時に一度だけ算出して使い回す
+function getZiwei(bHour, yearStem) {
+  const LUNAR_MONTH = 3;             // 1993-04-14 の旧暦月
   const hBranchIdx=Math.floor((bHour===23?0:bHour+1)/2)%12;
   const mingIdx=((2+LUNAR_MONTH-1-hBranchIdx)%12+12)%12;
-  const stemBase=GOKOTON_GONG[yearStem]||0;
+  const stemBase=GOSONTON_BASE[yearStem]||0;   // 遁干起点表(五鼠遁と同一)
   const mingStemIdx=(stemBase+mingIdx)%10;
   const mingStem=STEMS[mingStemIdx];
   const zwGong=6;
@@ -853,6 +852,7 @@ function getZiwei(bMonth,bDay,bHour,bMin,yearStem) {
     ziweiGong:zwGong,ziweiName:GONG_NAMES[zwGong]
   };
 }
+const BIRTH_ZIWEI = getZiwei(6, getYearPillar(BIRTH_DATE).stem);
 
 // ════════════════════════════════════════════════════════════
 //  天中殺（空亡）(修正3)
@@ -868,7 +868,7 @@ function getTenchusatsuByKanshi(kanshiNo){
   return JUN_KUBOU_LG[Math.floor(n / 10)].join('・');
 }
 // 出生日(1993-04-14)の日柱から確定。以後不変。
-const BIRTH_TENCHUSATSU = getTenchusatsuByKanshi(kanshiNoLG(new Date(1993, 3, 14)));
+const BIRTH_TENCHUSATSU = getTenchusatsuByKanshi(kanshiNoLG(BIRTH_DATE));
 
 // ════════════════════════════════════════════════════════════
 //  数秘術エンジン v3 ── 関係性モデル
@@ -940,13 +940,14 @@ function getNumerologyDay(date) {
 }
 
 function calcScoreFull(rokuyo,moon,pillar,now,monthPillar,hourPillar,moonSign,ziwei,numerology) {
+  const me = BIRTH_ELEM.stem;   // 日主（1993-04-14 → 乙）
   let s=50;
   s+={大安:12,友引:8,先勝:6,先負:4,赤口:2,仏滅:1}[rokuyo]||3;
   s+={新月:9,三日月:6,'上弦の月':7,'十三夜の月':8,満月:10,更待月:8,'下弦の月':6,有明月:5}[moon.name]||4;
   const ts={'印綬':10,'正官':9,'正財':8,'食神':7,'比肩':6,'偏印':5,'偏官':4,'劫財':3,'傷官':2,'偏財':3};
-  s+=ts[getTsuhensei('乙',pillar.stem)]||4;
-  s+={印綬:6,正官:5,正財:5,食神:4,比肩:4,偏印:3,偏官:3,劫財:2,傷官:1,偏財:2}[getTsuhensei('乙',monthPillar.stem)]||2;
-  s+={印綬:4,正官:4,正財:3,食神:3,比肩:3,偏印:2,偏官:2}[getTsuhensei('乙',hourPillar.stem)]||1;
+  s+=ts[getTsuhensei(me,pillar.stem)]||4;
+  s+={印綬:6,正官:5,正財:5,食神:4,比肩:4,偏印:3,偏官:3,劫財:2,傷官:1,偏財:2}[getTsuhensei(me,monthPillar.stem)]||2;
+  s+={印綬:4,正官:4,正財:3,食神:3,比肩:3,偏印:2,偏官:2}[getTsuhensei(me,hourPillar.stem)]||1;
   const ki=getKyuseiDayScore(now);
   s+=Math.round(Math.max(0,Math.min(8,(ki.total+6)/12*8)));
   const sc={牡羊座:5,獅子座:6,射手座:6,双子座:4,天秤座:4,水瓶座:4,牡牛座:2,蠍座:3,山羊座:3,蟹座:2,乙女座:2,魚座:3};
@@ -990,9 +991,9 @@ function getTarot(now) {
 
 function calcScore(rokuyo, moon, pillar, now) {
   const mp=getMonthPillar(now), hp=getHourPillar(now);
-  const ms=getMoonSign(now), zw=getZiwei(4,14,6,18,getYearPillar(new Date(1993,3,14)).stem);
+  const ms=getMoonSign(now);
   const nd=getNumerologyDay(now);
-  return calcScoreFull(rokuyo,moon,pillar,now,mp,hp,ms,zw,nd);
+  return calcScoreFull(rokuyo,moon,pillar,now,mp,hp,ms,BIRTH_ZIWEI,nd);
 }
 
 const LUCKY_COLORS = {
@@ -1008,7 +1009,6 @@ const LUCKY_COLORS = {
 let currentDiv        = null;
 let currentPromptData = null;
 let currentImageUrl   = null;
-let currentBlob       = null;  // 保存用に事前準備した Blob
 let currentFile       = null;  // navigator.share 用の File
 let currentObjUrl     = null;  // <a download> 用の ObjectURL
 let lastKeyedObjUrl   = null;  // keyed表示用blobURL（次回生成時に解放しメモリ蓄積を防ぐ）
@@ -1063,14 +1063,13 @@ function computeToday() {
   const monthPillar= getMonthPillar(now);
   const hourPillar = getHourPillar(now);
   const tarot      = getTarot(now);
-  const kyusei     = getDailyKyusei(now);
+  const kyusei     = BIRTH_KYUSEI;               // 本命星（生年で不変）
   const kyuseiInfo = getKyuseiDayScore(now);
   const moonSign   = getMoonSign(now);
-  const ascendant  = BIRTH_ASC;                      // 修正4: 出生図固定（横浜・UT変換済み）
-  const BIRTH_YR   = getYearPillar(new Date(1993,3,14));
-  const ziwei      = getZiwei(4,14,6,18,BIRTH_YR.stem);
+  const ascendant  = BIRTH_ASC;                  // 修正4: 出生図固定（横浜・UT変換済み）
+  const ziwei      = BIRTH_ZIWEI;                // 出生図固定
   const numerology = getNumerologyDay(now);
-  const tsuhenDay  = getTsuhensei('乙', pillar.stem);
+  const tsuhenDay  = getTsuhensei(BIRTH_ELEM.stem, pillar.stem);
   const tenchusatsu= BIRTH_TENCHUSATSU;              // 修正3: 日柱の旬から算出
   const score      = calcScore(rokuyo, moon, pillar, now);
   const element    = BIRTH_ELEM.element;
@@ -1460,6 +1459,10 @@ function buildPrompt(div) {
   return { prompt: fullPrompt, negative: negPrompt, theme, elemLabel, style, tarotName: tarot.n, dateSeed: ds, mode: 'oracle' };
 }
 
+// HTML属性/本文へ値を差し込む際の最小エスケープ
+const _ESC = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, c => _ESC[c]); }
+
 // ════════════════════════════════════════
 //  IndexedDB
 // ════════════════════════════════════════
@@ -1485,39 +1488,61 @@ function openDB() {
   });
 }
 
-function saveToHistory(promptData, imageData, extraInfo) {
-  const now = currentDiv ? currentDiv.now : new Date();
-  const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  const id = String(Date.now());
-  openDB().then(db => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.add({
-      id, date: dateStr,
-      theme:   promptData.theme  || '—',
-      style:   promptData.style  || currentStyle,
-      mode:    promptData.mode   || 'oracle',
-      prompt:  promptData.prompt || '',
-      imageData,
-      score:   currentDiv ? currentDiv.score  : null,
-      rokuyo:  currentDiv ? currentDiv.rokuyo : null,
-      savedAt: Date.now(),
-      ...(extraInfo || {}),
-    });
-    tx.oncomplete = () => renderHistory();
-  }).catch(e => console.warn('DB save error:', e));
+/* ────────────────────────────────────────────────────────────
+   履歴キャッシュ
+     旧版は再描画のたびに getAll() で全レコード（＝サムネのbase64を
+     最大200件・数十MB）を読み直していたため、★の切替や「もっと見る」
+     だけでも重い読み込みが走っていた。
+     セッション中は1度だけ読み、以後は差分をメモリ側に反映する。
+   ──────────────────────────────────────────────────────────── */
+let _histCache = null;
+let _histSeq   = 0;   // 同一ミリ秒の連続保存でもIDが衝突しないよう連番を混ぜる
+
+function newHistoryId() {
+  return String(Date.now()) + '-' + (++_histSeq);
+}
+function histCacheUnshift(rec) {
+  if(_histCache) _histCache.unshift(rec);
 }
 
-function loadHistory() {
+function loadHistory(force) {
+  if(_histCache && !force) return Promise.resolve(_histCache);
   return openDB().then(db => new Promise((resolve, reject) => {
     const tx  = db.transaction(STORE_NAME, 'readonly');
     const req = tx.objectStore(STORE_NAME).getAll();
-    req.onsuccess = e => resolve((e.target.result || []).sort((a,b) => b.savedAt - a.savedAt));
+    req.onsuccess = e => {
+      _histCache = (e.target.result || []).sort((a,b) => b.savedAt - a.savedAt);
+      resolve(_histCache);
+    };
     req.onerror   = e => reject(e.target.error);
   }));
 }
 
-// 機能B: ★お気に入りトグル（IndexedDBに fav:true を保存・旧レコード互換）
+// 生成結果を履歴へ保存する（画像はサムネのdata URL）
+function saveToHistory(promptData, imageData, extraInfo) {
+  const now = currentDiv ? currentDiv.now : new Date();
+  const record = {
+    id:      newHistoryId(),
+    date:    `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`,
+    theme:   promptData.theme  || '—',
+    style:   promptData.style  || currentStyle,
+    mode:    promptData.mode   || 'oracle',
+    prompt:  promptData.prompt || '',
+    imageData,
+    score:   currentDiv ? currentDiv.score  : null,
+    rokuyo:  currentDiv ? currentDiv.rokuyo : null,
+    savedAt: Date.now(),
+    ...(extraInfo || {}),
+  };
+  openDB().then(db => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    // add だと同一ミリ秒のID衝突で例外になり履歴が欠けるため put を使う
+    tx.objectStore(STORE_NAME).put(record);
+    tx.oncomplete = () => { histCacheUnshift(record); renderHistory(); };
+  }).catch(e => console.warn('DB save error:', e));
+}
+
+// ★お気に入りトグル（IndexedDBに fav:true を保存・旧レコード互換）
 function toggleFav(id, ev) {
   if(ev) ev.stopPropagation();
   openDB().then(db => new Promise(res => {
@@ -1526,8 +1551,13 @@ function toggleFav(id, ev) {
     const g = store.get(id);
     g.onsuccess = () => { const rec = g.result; if(rec) { rec.fav = !rec.fav; store.put(rec); } };
     tx.oncomplete = res; tx.onerror = res;
-  })).then(() => renderHistory()).catch(e => console.warn('toggleFav:', e));
+  })).then(() => {
+    const c = _histCache && _histCache.find(h => h.id === id);
+    if(c) c.fav = !c.fav;
+    renderHistory();
+  }).catch(e => console.warn('toggleFav:', e));
 }
+
 function toggleFavFilter() {
   _favOnly = !_favOnly;
   const b = document.getElementById('favFilterBtn');
@@ -1538,21 +1568,22 @@ function toggleFavFilter() {
 
 function deleteHistoryEntry(id) {
   openDB().then(db => new Promise(res => {
-    // ③修正: ★お気に入りは削除しない（誤タップ防止）。先に★を外す必要がある
+    // ★お気に入りは削除しない（誤タップ防止）。先に★を外す必要がある
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     const g = store.get(id);
     let blocked = false;
     g.onsuccess = () => {
       const rec = g.result;
-      if(rec && rec.fav) { blocked = true; return; } // ★付きは削除ブロック
+      if(rec && rec.fav) { blocked = true; return; }
       store.delete(id);
     };
     tx.oncomplete = () => res(blocked);
-    tx.onerror = () => res(false);
+    tx.onerror    = () => res(false);
   })).then(blocked => {
-    if(blocked) { alert('★お気に入りの画像です。削除するには、先に★を外してください。'); }
-    else { renderHistory(); }
+    if(blocked) { alert('★お気に入りの画像です。削除するには、先に★を外してください。'); return; }
+    if(_histCache) _histCache = _histCache.filter(h => h.id !== id);
+    renderHistory();
   }).catch(e => console.warn('deleteHistoryEntry:', e));
 }
 
@@ -1577,44 +1608,45 @@ const HISTORY_MAX = 200; // これを超えた古い履歴はIndexedDBから物�
 function renderHistory() {
   loadHistory().then(history => {
     const grid = document.getElementById('historyGrid');
+    if(!grid) return;
     if(!history || history.length === 0) {
       grid.innerHTML = '<div class="no-history" style="grid-column:1/-1">まだ履歴がありません<br><small>画像が生成されると保存されます</small></div>';
       return;
     }
-    // 機能B: 200件超は古い順に物理削除するが、★お気に入りは対象外（削除しない）
-    const _delable = history.filter(h => !h.fav);
-    if(_delable.length > HISTORY_MAX) {
-      const excess = _delable.slice(HISTORY_MAX);
+    // 200件超は古い順に物理削除するが、★お気に入りは対象外（削除しない）
+    const delable = history.filter(h => !h.fav);
+    if(delable.length > HISTORY_MAX) {
+      const excess = delable.slice(HISTORY_MAX);
       console.info(`[LGO] 履歴(非★)が${HISTORY_MAX}件を超えたため、古い順に${excess.length}件を削除します`);
+      const ids = new Set(excess.map(h => h.id));
       excess.forEach(h => deleteHistoryQuiet(h.id));
-      const _del = new Set(excess.map(h => h.id));
-      history = history.filter(h => !_del.has(h.id));
+      history = history.filter(h => !ids.has(h.id));
+      _histCache = history;
     }
-    // 機能B: ★のみ表示フィルタ
-    const _view = _favOnly ? history.filter(h => h.fav) : history;
-    if(_favOnly && _view.length === 0) {
+    // ★のみ表示フィルタ
+    const view = _favOnly ? history.filter(h => h.fav) : history;
+    if(_favOnly && view.length === 0) {
       grid.innerHTML = '<div class="no-history" style="grid-column:1/-1">★お気に入りはまだありません<br><small>履歴カードの☆を押すと登録できます</small></div>';
       return;
     }
-    const shown = _view.slice(0, histRenderCount);
-    let html = shown.map(h => {
+    let html = view.slice(0, histRenderCount).map(h => {
       const label = h.date ? h.date.slice(5).replace('-','/') : '—';
       const mode  = MODE_LABEL[h.mode] || '';
+      const id    = esc(h.id);
       return `
-      <div class="hist-item" onclick="openModal('${encodeURIComponent(h.id)}')">
-        <img class="hist-img" src="${h.imageData||''}" loading="lazy" onerror="this.parentElement.style.opacity='.4'">
+      <div class="hist-item" onclick="openModal('${id}')">
+        <img class="hist-img" src="${h.imageData||''}" loading="lazy" decoding="async" onerror="this.parentElement.style.opacity='.4'">
         <div class="hist-overlay">
-          <div class="hist-date">${label} ${mode}</div>
-          <div class="hist-theme">${h.rokuyo||''} ${h.score ? h.score+'pt' : ''}</div>
+          <div class="hist-date">${esc(label)} ${mode}</div>
+          <div class="hist-theme">${esc(h.rokuyo||'')} ${h.score ? esc(h.score)+'pt' : ''}</div>
         </div>
-        <button class="hist-del" onclick="event.stopPropagation();deleteHistoryEntry('${h.id}')">×</button>
-        <button class="hist-fav${h.fav ? ' on' : ''}" onclick="event.stopPropagation();toggleFav('${h.id}',event)">${h.fav ? '★' : '☆'}</button>
+        <button class="hist-del" onclick="event.stopPropagation();deleteHistoryEntry('${id}')">×</button>
+        <button class="hist-fav${h.fav ? ' on' : ''}" onclick="event.stopPropagation();toggleFav('${id}',event)">${h.fav ? '★' : '☆'}</button>
       </div>`;
     }).join('');
-    // 欠陥4: 未表示分がある場合のみ「もっと見る」を表示（初期30件・以降+30）
-    if(_view.length > histRenderCount) {
-      const rest = _view.length - histRenderCount;
-      html += `<button onclick="showMoreHistory()" style="grid-column:1/-1;margin-top:4px;padding:11px;background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.32);border-radius:12px;color:var(--violet);font-size:.76rem;font-weight:700;cursor:pointer;letter-spacing:.06em">▽ もっと見る（残り${rest}件）</button>`;
+    // 未表示分がある場合のみ「もっと見る」を表示（初期30件・以降+30）
+    if(view.length > histRenderCount) {
+      html += `<button class="hist-more" onclick="showMoreHistory()">▽ もっと見る（残り${view.length - histRenderCount}件）</button>`;
     }
     grid.innerHTML = html;
   }).catch(e => console.warn('renderHistory:', e));
@@ -1661,7 +1693,7 @@ function getPollinModel() {
 function setPollinModel(m) {
   if(!POLLIN_MODELS[m]) m = 'flux';
   try { localStorage.setItem('lg_pollinmodel', m); } catch(e){}
-  document.querySelectorAll('.pmodel-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+  document.querySelectorAll('#pmodelRow .pmodel-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
 }
 function savePollinKey() {
   const k = (document.getElementById('pollinKeyInput').value || '').trim();
@@ -1734,7 +1766,8 @@ function getImgQuality() {
 function setImgQuality(q) {
   if(!IMG_QUALITY_PRESETS[q]) q = 'balanced';
   try { localStorage.setItem('lg_imgquality', q); } catch(e){}
-  document.querySelectorAll('.quality-btn').forEach(b =>
+  // 画質行だけに限定する（#pmodelRow・セーフティ・精細強化も .quality-btn のため）
+  document.querySelectorAll('#qualityRow .quality-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.q === q));
 }
 
@@ -1756,16 +1789,6 @@ var QUALITY_PREFIX = {
 function clampPrompt(p) {
   p = String(p || '');
   return p.length > PROMPT_MAX ? p.slice(0, PROMPT_MAX) : p;
-}
-
-/* ネガティブを本文末尾にも付ける後方互換の保険。
-   Pollinations が negative クエリを無視する実装だった場合にも効かせるため。 */
-/* v4.1 修正：ネガティブは本文に混ぜない。
-   Pollinations は '--no' 構文を解釈しないため、末尾に付けた
-   「blurry, deformed, ugly …」がそのまま description（描く指示）として
-   読まれ、ぼやけた絵が出ていた。ネガは negative クエリのみで渡す。 */
-function appendNoTag(prompt, negative) {
-  return String(prompt || '');
 }
 
 /* negative クエリ文字列（非空のときだけ付く） */
@@ -1802,63 +1825,63 @@ function logGen(mode, prompt, negative, url) {
   } catch (e) {}
 }
 
-function buildPollinationsUrl(promptData, seed) {
-  const ql = getImgQuality();
-  const q = IMG_QUALITY_PRESETS[ql] || IMG_QUALITY_PRESETS.balanced;
-  const neg = (promptData.negative || '').trim();
-  // v4: 切り詰めはここ1箇所（PROMPT_MAX）。ネガは本文末尾(--no)とクエリの両方に付ける。
-  const base = appendNoTag(promptData.prompt || '', neg);
-  const pk = getPollinKey();
-  if(pk) {
-    const model = getPollinModel();
-    const sz = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
-    const kurl = fitUrl(function(p){
-      let u = `https://gen.pollinations.ai/image/${encodeURIComponent(p)}`
-           + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
-           + `&nofeed=true&nologo=true`
-           + `&key=${encodeURIComponent(pk)}`; // 認証をURLでも付与（gen側が高解像度を返すため）
-      u += negQuery(neg);
-      if(getSafeMode()) u += '&safe=true';
-      if(getEnhanceMode()) u += '&enhance=true';
-      return u;
-    }, base);
-    logGen('keyed', base, neg, kurl);
-    return kurl;
-  }
-  const url = fitUrl(function(p){
-    let u = `https://image.pollinations.ai/prompt/${encodeURIComponent(p)}`
-          + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
-          + `&nologo=true&nofeed=true&private=true`;
+/* ────────────────────────────────────────────────────────────
+   Pollinations URL ビルダー（1本化）
+     route 'keyed' : gen.pollinations.ai  ── APIキー認証・ネイティブ高解像度
+     route 'free'  : image.pollinations.ai ── 無鍵・画質モードのモデル/サイズ
+     route 'plain' : image.pollinations.ai ── API障害時の最小パラメータ再試行
+   旧版は同じ組み立てを3関数にコピーしていたため、
+   片方だけ直して挙動がズレる事故が起きやすかった。
+   ──────────────────────────────────────────────────────────── */
+function buildPollinUrl(promptData, seed, route, modelOverride) {
+  const ql   = getImgQuality();
+  const q    = IMG_QUALITY_PRESETS[ql] || IMG_QUALITY_PRESETS.balanced;
+  const neg  = (promptData.negative || '').trim();
+  const base = String(promptData.prompt || '');
+
+  const url = fitUrl(function(p) {
+    let u;
+    if(route === 'keyed') {
+      const sz    = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
+      const model = modelOverride || getPollinModel();
+      u = `https://gen.pollinations.ai/image/${encodeURIComponent(p)}`
+        + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
+        + `&nofeed=true&nologo=true`
+        // 認証をURLでも付与（gen側が高解像度を返すため）。取得は Bearer ヘッダー併用。
+        + `&key=${encodeURIComponent(getPollinKey())}`;
+    } else if(route === 'plain') {
+      // 2026-07-04 実測: width/height/seed付きが500でも、簡素なURLは通ることがある
+      u = `https://image.pollinations.ai/prompt/${encodeURIComponent(p)}`
+        + `?width=832&height=1216&seed=${seed}&nologo=true&nofeed=true`;
+    } else {
+      u = `https://image.pollinations.ai/prompt/${encodeURIComponent(p)}`
+        + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
+        + `&nologo=true&nofeed=true&private=true`;
+    }
     u += negQuery(neg);
-    if(q.enhance || getEnhanceMode()) u += '&enhance=true';
+    if(route === 'keyed') {
+      if(getSafeMode())    u += '&safe=true';
+      if(getEnhanceMode()) u += '&enhance=true';
+    } else if(route === 'free' && (q.enhance || getEnhanceMode())) {
+      u += '&enhance=true';
+    }
     return u;
   }, base);
-  logGen('nokey(auto)', base, neg, url);
+
+  logGen(route + (modelOverride ? '(model=' + modelOverride + ')' : ''), base, neg, url);
   return url;
 }
 
-// 欠陥3: keyed失敗時の「無鍵通常URL」段（image.pollinations.ai・モデル/サイズ/従来品質）。
-//        pkの有無に関わらず常に無鍵の高品質URLを組み立てる（簡易URLへ直行せず画質を維持）。
-function buildNoKeyPollinationsUrl(promptData, seed) {
-  const ql = getImgQuality();
-  const q = IMG_QUALITY_PRESETS[ql] || IMG_QUALITY_PRESETS.balanced;
-  const neg = (promptData.negative || '').trim();
-  const base = appendNoTag(promptData.prompt || '', neg);
-  const url = fitUrl(function(p){
-    let u = `https://image.pollinations.ai/prompt/${encodeURIComponent(p)}`
-          + `?model=${q.model}&seed=${seed}&width=${q.w}&height=${q.h}`
-          + `&nologo=true&nofeed=true&private=true`;
-    u += negQuery(neg);
-    if(q.enhance || getEnhanceMode()) u += '&enhance=true';
-    return u;
-  }, base);
-  logGen('nokey', base, neg, url);
-  return url;
+// 現在の設定に応じた既定ルート（キーがあれば keyed、無ければ free）
+function buildPollinationsUrl(promptData, seed) {
+  return buildPollinUrl(promptData, seed, getPollinKey() ? 'keyed' : 'free');
 }
 
 // キー付き取得: <img>はAuthorizationヘッダーを送れないため fetch+Bearer で認証する。
 // これで sk_/pk_ が正しく認証され、gen側が指定サイズ（縦長）を反映。blob化で毎回別画像になりループも解消。
-function fetchKeyedImage(url, key, onDone, onErr) {
+// track=false のときは lastKeyedObjUrl を書き換えない（呼び出し側が寿命を管理する）。
+// バリエーション生成では3枚を同時に保持するため、これを false にして解放事故を防ぐ。
+function fetchKeyedImage(url, key, onDone, onErr, track) {
   try {
     const headers = {};
     if(key) headers['Authorization'] = 'Bearer ' + key;
@@ -1869,9 +1892,11 @@ function fetchKeyedImage(url, key, onDone, onErr) {
       .then(r => { if(!r.ok) throw new Error('http ' + r.status); return r.blob(); })
       .then(blob => {
         if(!blob || blob.size < 1000) throw new Error('empty blob');
-        if(lastKeyedObjUrl) { try { URL.revokeObjectURL(lastKeyedObjUrl); } catch(e){} }
         const obj = URL.createObjectURL(blob);
-        lastKeyedObjUrl = obj;
+        if(track !== false) {
+          if(lastKeyedObjUrl) { try { URL.revokeObjectURL(lastKeyedObjUrl); } catch(e){} }
+          lastKeyedObjUrl = obj;
+        }
         onDone(obj);
       })
       .catch(e => { console.warn('[LGO] keyed fetch失敗→フォールバック:', e); onErr && onErr(e); });
@@ -1886,27 +1911,6 @@ let _lastPromptData = null;
 let _lastSeed = 0; // その画像を生成した実シード（バリエーションの基準に使う＝生成ごとに変わる）
 let _lastImgInfo = null; // 直近生成の受信解像度・形式（診断表示用）
 let _lastKeyedError = null; // 直近のkeyed失敗理由（診断表示用）
-// 指定モデルでkeyed URLを組み立てる（フォールバックでflux高解像度リトライ用）
-function buildKeyedUrlModel(promptData, seed, modelOverride) {
-  const ql = getImgQuality();
-  const pk = getPollinKey();
-  const neg = (promptData.negative || '').trim();
-  const base = appendNoTag(promptData.prompt || '', neg);
-  const model = modelOverride || getPollinModel();
-  const sz = KEYED_SIZE[ql] || KEYED_SIZE.balanced;
-  const kurl = fitUrl(function(p){
-    let u = `https://gen.pollinations.ai/image/${encodeURIComponent(p)}`
-         + `?model=${encodeURIComponent(model)}&width=${sz[0]}&height=${sz[1]}&seed=${seed}`
-         + `&nofeed=true&nologo=true`
-         + `&key=${encodeURIComponent(pk)}`;
-    u += negQuery(neg);
-    if(getSafeMode()) u += '&safe=true';
-    if(getEnhanceMode()) u += '&enhance=true';
-    return u;
-  }, base);
-  logGen('keyed(model=' + model + ')', base, neg, kurl);
-  return kurl;
-}
 // 結果画面の常設「品質バッジ」：キー付きネイティブ か 無料fluxアップスケール かを明示
 function _renderQualityBadge() {
   const el = document.getElementById('qualityBadge');
@@ -1921,7 +1925,9 @@ function _renderQualityBadge() {
       + (info.err ? `<span class="qb-note">※選択モデルは使えず flux で生成</span>` : '');
   } else {
     el.className = 'quality-badge free';
-    el.innerHTML = `🆓 無料flux を高画質化 ／ 受信 ${info.w}×${info.h} → 2304px へ拡大＋鮮明化 ${info.fmt}`
+    const tgt = upscaleTargetH(info.quality);
+    el.innerHTML = `🆓 無料flux を高画質化 ／ 受信 ${info.w}×${info.h}`
+      + (tgt ? ` → ${tgt}px へ拡大＋鮮明化` : `（等倍）`) + ` ${info.fmt}`
       + (info.err ? `<span class="qb-note">※本日のキー無料枠を使い切り→無料モード（明日回復）</span>` : '');
   }
 }
@@ -1931,13 +1937,14 @@ function _genOneVariation(seed, pd, onOk, onErr) {
     fetchKeyedImage(buildPollinationsUrl(pd, seed), pk,
       (obj) => onOk(obj, true),
       () => { // keyed失敗→無鍵Image（Hordeは使わない）
-        const u = buildNoKeyPollinationsUrl(pd, seed);
+        const u = buildPollinUrl(pd, seed, 'free');
         const im = new Image(); im.crossOrigin = 'anonymous';
         im.onload = () => onOk(u, false); im.onerror = () => onErr && onErr();
         im.src = u;
-      });
+      },
+      false);   // ← 3枚を同時に保持するので自動解放しない
   } else {
-    const u = buildNoKeyPollinationsUrl(pd, seed);
+    const u = buildPollinUrl(pd, seed, 'free');
     const im = new Image(); im.crossOrigin = 'anonymous';
     im.onload = () => onOk(u, false); im.onerror = () => onErr && onErr();
     im.src = u;
@@ -2022,26 +2029,16 @@ function selectVariation(i) {
     if(x && j !== i && x.isObj) { try { URL.revokeObjectURL(x.url); } catch(e){} }
   });
   const chosenUrl = it.url;
+  // 選んだ1枚は次の生成時にまとめて解放されるようグローバルの管理下へ移す（取りこぼし防止）
+  if(it.isObj) {
+    if(lastKeyedObjUrl && lastKeyedObjUrl !== chosenUrl) { try { URL.revokeObjectURL(lastKeyedObjUrl); } catch(e){} }
+    lastKeyedObjUrl = chosenUrl;
+  }
   _varItems = [];
   const strip = document.getElementById('varStrip');
   if(strip) strip.innerHTML = '';
   // 本命として表示＆履歴保存（共通のfinishWithImage経由・新しい世代トークンで）
   finishWithImage(chosenUrl, 'バリエーション', _lastPromptData, ++GEN_TOKEN);
-}
-
-// ── 画像URL→base64（CORS可なら履歴に保存できる形へ）──
-function convertImageToBase64(src, imgEl) {
-  return new Promise((resolve, reject) => {
-    if(src.startsWith('data:')) { resolve(src); return; }
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width  = imgEl.naturalWidth  || 768;
-      canvas.height = imgEl.naturalHeight || 1152;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(imgEl, 0, 0);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
-    } catch(e) { reject(e); }
-  });
 }
 
 // ── 完成画像をUIへ反映し、履歴保存・pending解除（共通処理）──
@@ -2057,19 +2054,21 @@ function upscaleTargetH(quality) {
   return 0;                                // fast = 等倍
 }
 function sharpenCanvas(ctx, w, h, k) {
+  if(w < 3 || h < 3) return;
   try {
     const srcD = ctx.getImageData(0,0,w,h), d = srcD.data;
     const outD = ctx.createImageData(w,h),  o = outD.data;
-    const idx = (x,y) => ((y*w+x)<<2);
-    for(let y=0;y<h;y++) for(let x=0;x<w;x++){
-      const i = idx(x,y);
-      if(x===0||y===0||x===w-1||y===h-1){ o[i]=d[i];o[i+1]=d[i+1];o[i+2]=d[i+2];o[i+3]=d[i+3]; continue; }
-      for(let c=0;c<3;c++){
-        const v = d[i+c]*(1+4*k)
-                - k*(d[idx(x-1,y)+c]+d[idx(x+1,y)+c]+d[idx(x,y-1)+c]+d[idx(x,y+1)+c]);
-        o[i+c] = v<0?0:v>255?255:v;
+    o.set(d);                       // 縁は元画素のまま（内側だけ書き換える）
+    const center = 1 + 4*k, row = w << 2;
+    for(let y=1; y<h-1; y++) {
+      let i = ((y*w) + 1) << 2;     // (1, y) の先頭バイト
+      for(let x=1; x<w-1; x++, i+=4) {
+        for(let c=0; c<3; c++) {
+          const j = i + c;
+          const v = d[j]*center - k*(d[j-4] + d[j+4] + d[j-row] + d[j+row]);
+          o[j] = v < 0 ? 0 : v > 255 ? 255 : v;
+        }
       }
-      o[i+3]=d[i+3];
     }
     ctx.putImageData(outD,0,0);
   } catch(e) {}
@@ -2089,7 +2088,7 @@ function upscaleToDataURL(imgEl, quality, asPng) {
     const w = Math.round(nw + (finalW - nw) * t);
     const h = Math.round(nh + (finalH - nh) * t);
     const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-    const ctx = cv.getContext('2d');
+    const ctx = cv.getContext('2d', { willReadFrequently: s === stages });
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(src, 0, 0, w, h);
     src = cv;
@@ -2132,7 +2131,6 @@ function finishWithImage(src, winner, promptData, token) {
   const img      = document.getElementById('mainImg');
   const loading  = document.getElementById('loadingOverlay');
   const errorDiv = document.getElementById('errorState');
-  const dlBtn    = document.getElementById('dlBtn');
   const regenBtn = document.getElementById('regenBtn');
   const hint     = document.getElementById('loadingPromptHint');
   isGenerating = false;
@@ -2148,9 +2146,7 @@ function finishWithImage(src, winner, promptData, token) {
       img.classList.add('loaded');
       if(loading) loading.classList.add('hidden');
       if(errorDiv) errorDiv.style.display = 'none';
-      if(dlBtn) dlBtn.disabled = false;
-      { const _sb=document.getElementById('shareBtn'); if(_sb) _sb.disabled=false; }
-      { const _vb=document.getElementById('varBtn'); if(_vb) _vb.disabled=false; } // 機能A: 表示成功でバリエーション可
+      setActionsEnabled(true);   // 表示成功 → 保存・共有・バリエーションを解禁
       if(regenBtn) { regenBtn.disabled = false; regenBtn.textContent = '✦ 再生成'; }
       _renderQualityBadge();
       if(hint) hint.textContent = recovered
@@ -2161,8 +2157,7 @@ function finishWithImage(src, winner, promptData, token) {
       console.warn('[LGO] 画像の表示に失敗しました:', displayUrl);
       if(loading) loading.classList.add('hidden');
       if(regenBtn) regenBtn.disabled = false;
-      if(dlBtn) dlBtn.disabled = true;
-  { const _sb3=document.getElementById('shareBtn'); if(_sb3) _sb3.disabled=true; }
+      setActionsEnabled(false);
       if(errorDiv) {
         errorDiv.innerHTML = '<div class="error-icon">🌙</div><div class="error-msg">画像の表示に失敗しました<br><small>「再生成」を押してください</small></div>';
         errorDiv.style.display = 'flex';
@@ -2202,7 +2197,7 @@ function finishWithImage(src, winner, promptData, token) {
         }
       }
       thumb = makeThumb(off);
-      _lastImgInfo = { w: off.naturalWidth || 0, h: off.naturalHeight || 0, fmt: (displayUrl.indexOf('image/png') >= 0 ? 'PNG' : 'JPEG'), winner, model: (getPollinKey() ? getPollinModel() : '無料'), err: (winner !== 'Pollinations-HD' && _lastKeyedError) ? String((_lastKeyedError && _lastKeyedError.message) || _lastKeyedError) : '' };
+      _lastImgInfo = { quality, w: off.naturalWidth || 0, h: off.naturalHeight || 0, fmt: (displayUrl.indexOf('image/png') >= 0 ? 'PNG' : 'JPEG'), winner, model: (getPollinKey() ? getPollinModel() : '無料'), err: (winner !== 'Pollinations-HD' && _lastKeyedError) ? String((_lastKeyedError && _lastKeyedError.message) || _lastKeyedError) : '' };
     } catch(e) { displayUrl = src; thumb = null; }
     show(displayUrl, thumb || displayUrl, winner);
   };
@@ -2282,7 +2277,6 @@ function generateImage(promptData, seed) {
   const loading  = document.getElementById('loadingOverlay');
   const img      = document.getElementById('mainImg');
   const errorDiv = document.getElementById('errorState');
-  const dlBtn    = document.getElementById('dlBtn');
   const regenBtn = document.getElementById('regenBtn');
   const hint     = document.getElementById('loadingPromptHint');
 
@@ -2292,8 +2286,8 @@ function generateImage(promptData, seed) {
   loading.classList.remove('hidden');
   errorDiv.style.display = 'none';
   img.classList.remove('loaded');
-  img.onload = null; img.onerror = null; img.src = '';
-  dlBtn.disabled = true; regenBtn.disabled = true;
+  img.removeAttribute('src'); img.onload = null; img.onerror = null;
+  setActionsEnabled(false); regenBtn.disabled = true;
   isGenerating = true;
   promptData.quality = getImgQuality(); // アップスケール判定用
   promptData.keyed   = !!getPollinKey(); // 高品質(認証)ルート判定用
@@ -2331,22 +2325,13 @@ function generateImage(promptData, seed) {
   }, 1000);
 
   // ① Pollinations 優先（通常はこれで高速完了）
+  //    フォールバック段: keyed → keyed(flux) → 無鍵通常 → 簡易URL → Horde
   hint.textContent = '✦ 生成中… (Pollinations AI)';
-  const pollinImg = new Image();
-  pollinImg.crossOrigin = 'anonymous';
-  pollinImg.onload  = () => { if(!done) win(pollinUrl, 'Pollinations'); };
-  // ①-b 通常URLが失敗（パラメータ付きAPIの障害等）→ パラメータ無しの簡易URLで再試行
-  //      2026-07-04 実測: width/height/seed付きが500でも、プロンプトのみは正常生成できる
+
+  // ③ 簡易URL（パラメータ付きAPIが500を返す障害時の最後の砦）→ 失敗ならHorde
   const tryPlainThenHorde = () => {
     if(done) return;
-    const _pnNeg = (promptData.negative || '').trim();
-    const _pnBase = appendNoTag(promptData.prompt || '', _pnNeg);
-    const _pnSeed = Math.floor(Math.random()*1000000);
-    const plainUrl = fitUrl(function(p){
-      return 'https://image.pollinations.ai/prompt/' + encodeURIComponent(p) +
-        `?width=832&height=1216&seed=${_pnSeed}&nologo=true&nofeed=true` + negQuery(_pnNeg);
-    }, _pnBase);
-    logGen('plain', _pnBase, _pnNeg, plainUrl);
+    const plainUrl = buildPollinUrl(promptData, Math.floor(Math.random()*1000000), 'plain');
     if(hint) hint.textContent = '✦ 簡易モードで再試行中…（API障害対応）';
     const p2 = new Image(); p2.crossOrigin = 'anonymous';
     p2.onload  = () => { if(!done) win(plainUrl, 'Pollinations簡易'); };
@@ -2355,17 +2340,17 @@ function generateImage(promptData, seed) {
     };
     p2.src = plainUrl;
   };
-  pollinImg.onerror = tryPlainThenHorde;
-  // 欠陥3: keyed失敗→無鍵通常URL(image.pollinations.ai・モデル/サイズ/従来品質)→簡易URL→Horde の四段
+  // ② 無鍵通常URL（画質モードのモデル/サイズを維持したまま再試行）
   const tryNoKeyThenPlain = () => {
     if(done) return;
-    const noKeyUrl = buildNoKeyPollinationsUrl(promptData, seed);
+    const noKeyUrl = buildPollinUrl(promptData, seed, 'free');
     if(hint) hint.textContent = '✦ 通常モードで再試行中…';
     const p1 = new Image(); p1.crossOrigin = 'anonymous';
     p1.onload  = () => { if(!done) win(noKeyUrl, 'Pollinations通常'); };
-    p1.onerror = tryPlainThenHorde; // 無鍵通常も失敗→簡易→Horde
+    p1.onerror = tryPlainThenHorde;
     p1.src = noKeyUrl;
   };
+
   const _pk = getPollinKey();
   if(_pk) {
     // キー使用時は fetch+Bearer で取得（<img>はヘッダー不可＝匿名化して正方形になる問題を解消）
@@ -2377,7 +2362,7 @@ function generateImage(promptData, seed) {
         // 選択モデル(例: nanobanana-2)がキーで失敗 → 無料0.6MPに落とさず、キー付きfluxで高解像度リトライ
         if(getPollinModel() !== 'flux') {
           if(hint) hint.textContent = '✦ Fluxで高画質リトライ中…';
-          fetchKeyedImage(buildKeyedUrlModel(promptData, seed, 'flux'), _pk,
+          fetchKeyedImage(buildPollinUrl(promptData, seed, 'keyed', 'flux'), _pk,
             (objUrl) => { if(!done) win(objUrl, 'Pollinations-HD'); },
             (err2)   => { _lastKeyedError = err2 || err; if(!done) tryNoKeyThenPlain(); });
         } else {
@@ -2385,6 +2370,10 @@ function generateImage(promptData, seed) {
         }
       });
   } else {
+    const pollinImg = new Image();
+    pollinImg.crossOrigin = 'anonymous';
+    pollinImg.onload  = () => { if(!done) win(pollinUrl, 'Pollinations'); };
+    pollinImg.onerror = tryPlainThenHorde;
     pollinImg.src = pollinUrl;
   }
 
@@ -2422,13 +2411,11 @@ function resumePendingGeneration() {
   const hint     = document.getElementById('loadingPromptHint');
   const errorDiv = document.getElementById('errorState');
   const regenBtn = document.getElementById('regenBtn');
-  const dlBtn    = document.getElementById('dlBtn');
 
   isGenerating = true;
   if(errorDiv) errorDiv.style.display = 'none';
   if(loading)  loading.classList.remove('hidden');
-  if(dlBtn) dlBtn.disabled = true;
-  { const _sb3=document.getElementById('shareBtn'); if(_sb3) _sb3.disabled=true; }
+  setActionsEnabled(false);
   if(regenBtn) regenBtn.disabled = true;
   if(hint)     hint.textContent = '✦ 前回の生成を回収中…';
   const genToken = ++GEN_TOKEN; // 回収も1世代として扱う
@@ -2497,7 +2484,7 @@ function resumePendingGeneration() {
 // 保存用データの事前準備（表示確定時に非同期で実行 → クリック時は同期で保存可能に）
 function prepareSaveData(url) {
   if(currentObjUrl) { try { URL.revokeObjectURL(currentObjUrl); } catch(e){} }
-  currentBlob = null; currentFile = null; currentObjUrl = null;
+  currentFile = null; currentObjUrl = null;
   if(!url) return;
   const d = currentDiv ? currentDiv.now : new Date();
   const ext  = url.startsWith('data:image/png') ? 'png' : 'jpg';
@@ -2507,7 +2494,6 @@ function prepareSaveData(url) {
     fetch(url)
       .then(r => r.blob())
       .then(blob => {
-        currentBlob   = blob;
         currentObjUrl = URL.createObjectURL(blob);
         try { currentFile = new File([blob], fname, { type: blob.type || type }); } catch(e) { currentFile = null; }
       })
@@ -2532,7 +2518,8 @@ function shareImage() {
   const dateStr = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
   const roku = (currentDiv && currentDiv.rokuyo) ? (' ' + currentDiv.rokuyo) : '';
   const text = `今日のラッキーガール ✦ ${dateStr}${roku}`;
-  const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.jpg`;
+  const ext = (currentImageUrl && currentImageUrl.startsWith('data:image/png')) ? 'png' : 'jpg';
+  const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.${ext}`;
   if(currentFile && navigator.canShare && navigator.canShare({ files: [currentFile] })) {
     navigator.share({ files: [currentFile], text }).catch(() => {});
     return;
@@ -2644,17 +2631,47 @@ function generateFree() {
 // ════════════════════════════════════════
 let uploadedImageBase64 = null;
 
+const I2I_MAX_EDGE = 1024;   // Horde へ送る参照画像の長辺上限(px)
+
+// 参照画像を長辺 I2I_MAX_EDGE まで縮小して JPEG 化する。
+// 原寸のスマホ写真をそのまま base64 で送ると十数MBになり送信が失敗するため。
+function shrinkImageFile(dataUrl) {
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => {
+      const long = Math.max(im.naturalWidth, im.naturalHeight);
+      if(!long || long <= I2I_MAX_EDGE) { resolve(dataUrl); return; }
+      try {
+        const sc = I2I_MAX_EDGE / long;
+        const cv = document.createElement('canvas');
+        cv.width  = Math.round(im.naturalWidth  * sc);
+        cv.height = Math.round(im.naturalHeight * sc);
+        const ctx = cv.getContext('2d');
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(im, 0, 0, cv.width, cv.height);
+        resolve(cv.toDataURL('image/jpeg', 0.92));
+      } catch(e) { resolve(dataUrl); }
+    };
+    im.onerror = () => resolve(dataUrl);
+    im.src = dataUrl;
+  });
+}
+
 function onImageUpload(e) {
   const file = e.target.files[0];
   if(!file) return;
+  const label = document.querySelector('.upload-zone .upload-text');
   const reader = new FileReader();
   reader.onload = ev => {
-    uploadedImageBase64 = ev.target.result;
-    const prev = document.getElementById('uploadPreview');
-    prev.src = uploadedImageBase64; prev.style.display = 'block';
-    document.querySelector('.upload-zone .upload-text').innerHTML =
-      `<span style="color:var(--green)">✅ ${file.name}</span><br><small>タップで変更</small>`;
+    shrinkImageFile(ev.target.result).then(data => {
+      uploadedImageBase64 = data;
+      const prev = document.getElementById('uploadPreview');
+      prev.src = data; prev.style.display = 'block';
+      if(label) label.innerHTML =
+        `<span style="color:var(--green)">✅ ${esc(file.name)}</span><br><small>タップで変更</small>`;
+    });
   };
+  reader.onerror = () => { if(label) label.innerHTML = '読み込みに失敗しました<br><small>別の画像をお試しください</small>'; };
   reader.readAsDataURL(file);
 }
 
@@ -2685,7 +2702,6 @@ function generateImg2ImgWithHorde(promptData, strength, sourceBase64) {
   const loading  = document.getElementById('loadingOverlay');
   const img      = document.getElementById('mainImg');
   const errorDiv = document.getElementById('errorState');
-  const dlBtn    = document.getElementById('dlBtn');
   const regenBtn = document.getElementById('regenBtn');
   const hint     = document.getElementById('loadingPromptHint');
 
@@ -2695,8 +2711,8 @@ function generateImg2ImgWithHorde(promptData, strength, sourceBase64) {
   loading.classList.remove('hidden');
   errorDiv.style.display = 'none';
   img.classList.remove('loaded');
-  img.onload = null; img.onerror = null; img.src = '';
-  dlBtn.disabled = true; regenBtn.disabled = true;
+  img.removeAttribute('src'); img.onload = null; img.onerror = null;
+  setActionsEnabled(false); regenBtn.disabled = true;
   isGenerating = true;
   document.getElementById('promptText').textContent = promptData.prompt;
   document.getElementById('themeLabel').textContent = '🖼️ 画像参照生成';
@@ -2770,8 +2786,7 @@ function saveHordeKey() {
 // ════════════════════════════════════════
 //  MODAL
 // ════════════════════════════════════════
-function openModal(idEnc) {
-  const id = decodeURIComponent(idEnc);
+function openModal(id) {
   openDB().then(db => {
     const tx  = db.transaction(STORE_NAME, 'readonly');
     const req = tx.objectStore(STORE_NAME).get(id);
@@ -2794,57 +2809,82 @@ function closeModal(e) {
 // ════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════
+/* 鑑定結果を計算してUIへ反映する。プロンプト欄も同時に更新する。
+   実測暦(calendar.json)の到着後にもう一度呼ぶことで、内蔵計算の「※概算」表示が
+   実測値に差し替わる。 */
+function refreshDivination() {
+  try {
+    currentDiv = computeToday();
+    updateUI(currentDiv);
+    currentPromptData = buildPrompt(currentDiv);
+    const pt = document.getElementById('promptText');
+    // 生成中／生成済みの表示を上書きしないよう、待機中のみ更新する
+    if(pt && !isGenerating) pt.textContent = currentPromptData.prompt;
+    return true;
+  } catch(e) {
+    console.error('[LGO] 鑑定の計算に失敗:', e);
+    return false;
+  }
+}
+
 async function init() {
   initStyleUI();
   setImgQuality(getImgQuality());
   setPollinModel(getPollinModel());
 
-  // 修正1: 実測暦データを先に確定させてから鑑定を計算する（失敗しても続行）
-  await loadCalendarLG();
-
-  try {
-    const div = computeToday();
-    currentDiv = div;
-    updateUI(div);
-  } catch(e) { console.error('updateUI error:', e); }
-
+  // ── 初期描画をブロックしない ──────────────────────────────
+  // 旧版は calendar.json の取得(最大6秒)を await してから描画していたため、
+  // 初回起動時に画面が「—」のまま数秒固まっていた。
+  // まず内蔵計算で即描画し、実測暦が届いたら静かに差し替える。
+  if(!refreshDivination()) {
+    // 鑑定計算そのものが失敗しても、生成UIだけは操作可能にしておく
+    showReadyToGenerate();
+    return;
+  }
   renderHistory();
 
-  const d = currentDiv ? currentDiv.now : new Date();
-  const todayKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const promptData = buildPrompt(currentDiv);
-  currentPromptData = promptData;
-  document.getElementById('promptText').textContent = promptData.prompt;
+  loadCalendarLG().then(cal => { if(cal) refreshDivination(); });
 
-  loadHistory().then(all => {
+  const d = currentDiv.now;
+  const todayKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  try {
+    const all = await loadHistory();
     // ① 中断された生成があれば最優先で回収（再起動/復帰対応）
     if(resumePendingGeneration()) return;
     const todayEntry = all.find(h => h.date === todayKey && h.mode === 'oracle');
-    if(todayEntry && todayEntry.imageData) {
-      // 機能3-A: 当日生成済みなら通信ゼロで即表示（再生成ボタンは有効のまま）
-      const img     = document.getElementById('mainImg');
-      const loading = document.getElementById('loadingOverlay');
-      const hint    = document.getElementById('loadingPromptHint');
-      const regenBtn= document.getElementById('regenBtn');
-      currentImageUrl = todayEntry.imageData;
-      img.onload = () => {
-        img.classList.add('loaded');
-        loading.classList.add('hidden');
-        document.getElementById('dlBtn').disabled = false;
-        { const _sb2=document.getElementById('shareBtn'); if(_sb2) _sb2.disabled=false; }
-        if(regenBtn) regenBtn.disabled = false;
-        if(hint) hint.textContent = '✦ 本日の一枚（生成済み）';
-      };
-      img.onerror = () => {
-        showReadyToGenerate();
-      };
-      img.src = todayEntry.imageData;
-    } else {
-      // ①仕様変更: 日付が変わっても自動生成しない（無料枠を無駄に消費しないため）。
-      //  「生成する」ボタンを押したら生成する。以降は「再生成」ボタンになる。
+    if(!todayEntry || !todayEntry.imageData) {
+      // 日付が変わっても自動生成しない（無料枠を無駄に消費しないため）。
+      // 「生成する」ボタンを押したら生成し、以降は「再生成」ボタンになる。
       showReadyToGenerate();
+      return;
     }
-  }).catch(() => showReadyToGenerate());
+    // 当日生成済みなら通信ゼロで即表示（再生成ボタンは有効のまま）
+    const img      = document.getElementById('mainImg');
+    const loading  = document.getElementById('loadingOverlay');
+    const hint     = document.getElementById('loadingPromptHint');
+    const regenBtn = document.getElementById('regenBtn');
+    currentImageUrl = todayEntry.imageData;
+    img.onload = () => {
+      img.classList.add('loaded');
+      loading.classList.add('hidden');
+      setActionsEnabled(true);
+      if(regenBtn) regenBtn.disabled = false;
+      if(hint) hint.textContent = '✦ 本日の一枚（生成済み）';
+    };
+    img.onerror = showReadyToGenerate;
+    img.src = todayEntry.imageData;
+  } catch(e) {
+    showReadyToGenerate();
+  }
+}
+
+// 保存・共有・バリエーションの3ボタンをまとめて有効/無効化する
+function setActionsEnabled(on) {
+  ['dlBtn','shareBtn','varBtn'].forEach(id => {
+    const b = document.getElementById(id);
+    if(b) b.disabled = !on;
+  });
 }
 
 // 未生成状態：自動生成せず「生成する」ボタンを待つ（キー無料枠を温存）
@@ -2852,11 +2892,8 @@ function showReadyToGenerate() {
   const loading  = document.getElementById('loadingOverlay');
   const errorDiv = document.getElementById('errorState');
   const regenBtn = document.getElementById('regenBtn');
-  const dlBtn    = document.getElementById('dlBtn');
   if(loading) loading.classList.add('hidden');
-  if(dlBtn) dlBtn.disabled = true;
-  { const _sb=document.getElementById('shareBtn'); if(_sb) _sb.disabled=true; }
-  { const _vb=document.getElementById('varBtn'); if(_vb) _vb.disabled=true; }
+  setActionsEnabled(false);
   if(regenBtn) { regenBtn.disabled = false; regenBtn.textContent = '✦ 生成する'; }
   if(errorDiv) {
     errorDiv.innerHTML = '<div class="error-icon">✦</div><div class="error-msg">本日の一枚はまだ生成されていません<br><small style="color:var(--muted)">下の「生成する」を押してください<br>（無料枠を温存するため自動生成しません）</small></div>';

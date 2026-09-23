@@ -1,7 +1,8 @@
 // 運気の女神 Lucky Girl Oracle ── Service Worker
 // アプリシェル(HTML/アイコン)をキャッシュしてオフライン起動＆高速再表示。
 // 画像生成API(Pollinations/Horde)など外部オリジンはSWを介さずネットワークへ通す。
-const CACHE = 'lg-oracle-v2';
+const CACHE = 'lg-oracle-v3';
+const FONT_CACHE = 'lg-fonts-v1';   // Google Fonts（更新頻度が低いので別枠で長期保持）
 
 // アプリシェル: 起動に必須のものだけ。スプラッシュ(assets/splash)は
 // iOS が起動時に直接読むためSWキャッシュ不要 → 初回インストールを軽くする。
@@ -26,7 +27,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== FONT_CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -37,7 +38,24 @@ self.addEventListener('fetch', e => {
 
   let url;
   try { url = new URL(req.url); } catch (_) { return; }
-  if (url.origin !== location.origin) return;   // 外部(生成API等)はブラウザ任せ
+  // Google Fonts: CSSは stale-while-revalidate、フォント本体(woff2)はURLが不変なのでキャッシュ優先。
+  // 2回目以降の起動でフォント待ちが消え、オフラインでも明朝体・装飾体で表示できる。
+  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
+    e.respondWith(caches.open(FONT_CACHE).then(async c => {
+      const hit = await c.match(req);
+      const refresh = () => fetch(req).then(res => {
+        if (res && (res.ok || res.type === 'opaque')) c.put(req, res.clone()).catch(() => {});
+        return res;
+      });
+      if (hit) {
+        if (url.hostname === 'fonts.googleapis.com') refresh().catch(() => {});  // CSSだけ裏で更新
+        return hit;
+      }
+      return refresh();
+    }));
+    return;
+  }
+  if (url.origin !== location.origin) return;   // その他の外部(生成API等)はブラウザ任せ
 
   // HTML/ナビゲーション: ネットワーク優先（更新を即反映）、失敗時にキャッシュ
   if (req.mode === 'navigate' || url.pathname.endsWith('.html')) {

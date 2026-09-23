@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>✨ Lucky Girl Oracle v15</title>
+<title>✨ Lucky Girl Oracle v16</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0d0b1a">
 <meta name="description" content="毎日の占い(15占術統合)から、その日の運気の女の子をAI生成するデイリー占いアプリ。">
@@ -39,7 +39,9 @@
 <link rel="dns-prefetch" href="https://stablehorde.net">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;700&family=Cinzel+Decorative&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;700&family=Cinzel+Decorative&family=Noto+Sans+JP:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;700&family=Cinzel+Decorative&family=Noto+Sans+JP:wght@400;700&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;700&family=Cinzel+Decorative&family=Noto+Sans+JP:wght@400;700&display=swap"></noscript>
 <style>
   :root {
     --ink:    #0d0b1a;
@@ -88,7 +90,7 @@
       radial-gradient(2px 2px at 65% 50%, rgba(167,139,250,.4), transparent),
       radial-gradient(1.5px 1.5px at 25% 55%, rgba(244,154,173,.5), transparent);
   }
-  .wrap { position: relative; z-index: 1; max-width: 520px; margin: 0 auto; padding: 0 16px 80px; }
+  .wrap { position: relative; z-index: 1; max-width: 520px; margin: 0 auto; padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) calc(80px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
   header { text-align: center; padding: 40px 0 28px; position: relative; }
   .header-subtitle { font-family: 'Cinzel Decorative', serif; font-size: .62rem; letter-spacing: .3em; color: var(--gold); margin-bottom: 10px; opacity: .85; }
   .header-title { font-family: 'Shippori Mincho', serif; font-size: 1.7rem; font-weight: 700; background: linear-gradient(135deg, var(--gold) 0%, var(--rose) 50%, var(--violet) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1.3; margin-bottom: 6px; }
@@ -116,7 +118,9 @@
   .loading-text { font-family: 'Shippori Mincho', serif; font-size: .8rem; color: var(--gold); letter-spacing: .15em; animation: pulse 2s ease-in-out infinite; }
   .loading-sub { font-size: .68rem; color: var(--muted); letter-spacing: .06em; }
   @keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
-  .error-state { display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 60px 20px; text-align: center; }
+  /* 空の<img>が幅を占有してメッセージが右半分に押し出されていたため、重ね表示にする */
+  .main-image:not([src]) { display: none; }
+  .error-state { display: none; position: absolute; inset: 0; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 60px 20px; text-align: center; }
   .error-icon { font-size: 2.4rem; }
   .error-msg { font-size: .82rem; color: var(--muted); line-height: 1.7; }
   .prompt-section { padding: 12px 20px 16px; border-top: 1px solid var(--border); }
@@ -166,13 +170,15 @@
   .hist-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(13,11,26,.9)); padding: 16px 6px 6px; }
   .hist-date { font-size: .55rem; color: var(--gold); letter-spacing: .06em; text-align: center; }
   .hist-theme { font-size: .5rem; color: var(--muted); text-align: center; }
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 100; align-items: center; justify-content: center; padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); }
   .modal-overlay.open { display: flex; }
   .modal-inner { max-width: 420px; width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }
-  .modal-img { width: 100%; display: block; max-height: 85vh; object-fit: contain; }
+  .modal-img { width: 100%; display: block; max-height: 70vh; object-fit: contain; background: var(--deep); }
   .modal-info { padding: 14px 16px; }
   .modal-date { font-size: .7rem; color: var(--gold); margin-bottom: 4px; }
   .modal-theme { font-size: .75rem; color: var(--muted); margin-bottom: 10px; }
+  .modal-actions { display: flex; gap: 8px; }
+  .modal-save { color: var(--gold); border-color: rgba(232,201,106,.35); }
   .modal-close { width: 100%; padding: 10px; background: rgba(255,255,255,.06); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: .8rem; cursor: pointer; }
   .settings-toggle { text-align: center; margin-bottom: 10px; }
   .settings-toggle-btn { background: none; border: 1px solid var(--border); color: var(--muted); font-size: .65rem; padding: 5px 14px; border-radius: 20px; cursor: pointer; letter-spacing: .08em; }
@@ -232,6 +238,7 @@
   .lucky-tags { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 14px; }
   .lucky-tag { font-size: .65rem; padding: 3px 10px; border-radius: 20px; border: 1px solid; letter-spacing: .04em; }
   .hist-more { grid-column: 1/-1; margin-top: 4px; padding: 11px; background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.32); border-radius: 12px; color: var(--violet); font-size: .76rem; font-weight: 700; cursor: pointer; letter-spacing: .06em; }
+  .toast { position: fixed; left: 50%; bottom: calc(32px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: 88%; text-align: center; background: rgba(20,17,40,.96); color: #f0eaff; border: 1px solid rgba(167,139,250,.4); border-radius: 12px; padding: 10px 18px; font-size: .78rem; z-index: 9999; box-shadow: 0 8px 30px rgba(0,0,0,.5); transition: opacity .4s; }
   .no-history { text-align: center; padding: 30px; color: var(--muted); font-size: .78rem; }
   .gen-status { font-size: .72rem; color: var(--gold); text-align: center; padding: 6px 12px; background: rgba(232,201,106,.08); border-radius: 8px; margin: 0 20px 12px; display: none; }
   .gen-status.show { display: block; }
@@ -369,7 +376,7 @@
       <button class="quality-btn pmodel-btn" data-m="flux" onclick="setPollinModel('flux')">⚡ Flux<small>標準・安定</small></button>
     </div>
     <div class="settings-note" style="margin-top:4px">モデル説明：🍌 Nano Banana 2＝最高品質（Gemini 3.1）／🌊 Seedream＝高品質／⚡ Flux＝高品質標準・安定（既定）</div>
-    <input class="settings-input" id="pollinKeyInput" type="text" placeholder="sk_... （Pollinations APIキー）" value="" style="margin-top:8px">
+    <input class="settings-input" id="pollinKeyInput" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="sk_... （Pollinations APIキー）" value="" style="margin-top:8px">
     <div class="settings-hint" style="margin-bottom:14px">
       📌 <a href="https://enter.pollinations.ai" target="_blank">enter.pollinations.ai</a> の「API」→「Add Key」で<strong>APIキー(sk_)</strong>を発行→入力すると、Nano Banana 2 / Seedream など<strong style="color:var(--gold)">本物の高性能モデルがネイティブ高解像度・PNG（約2〜5MB）の最高品質</strong>で生成されます。<br>
       ※ 本アプリはヘッダー認証で送るため sk_ で動作します。Pollen クレジット消費（無料枠あり／高品質モデルは有料）。<strong style="color:var(--rose)">sk_は秘密鍵</strong>なので、キーに少額のBudget上限を設定推奨（万一に備え）。未入力時は無料の簡易モデル(約0.6MP＋自動拡大)で動作します。
@@ -389,7 +396,7 @@
     </div>
 
     <label class="settings-label">Stable Horde APIキー（無料登録で高速化）</label>
-    <input class="settings-input" id="hordeKeyInput" type="text" placeholder="例: abc123xyz... （未入力=匿名キー）" value="">
+    <input class="settings-input" id="hordeKeyInput" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="例: abc123xyz... （未入力=匿名キー）" value="">
     <div class="settings-hint">
       📌 <a href="https://stablehorde.net/register" target="_blank">stablehorde.net</a> で無料登録 → APIキーを取得 → ここに入力すると生成が<strong style="color:var(--green)">5〜30秒</strong>に高速化されます。<br>
       ※ 画像生成には先にPollinations.ai（3〜15秒）を試みます。
@@ -411,7 +418,10 @@
     <div class="modal-info">
       <div class="modal-date" id="modalDate"></div>
       <div class="modal-theme" id="modalTheme"></div>
-      <button class="modal-close" onclick="closeModal()">閉じる</button>
+      <div class="modal-actions">
+        <button class="modal-close modal-save" id="modalSaveBtn" onclick="saveModalImage()">↓ 保存</button>
+        <button class="modal-close" onclick="closeModal()">閉じる</button>
+      </div>
     </div>
   </div>
 </div>
@@ -421,101 +431,167 @@
 // ════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════
-//  暦データ実測ソース (修正1)
-//  姉妹アプリ GOV3 が Actions で毎日更新している ajnet.ne.jp 実測値。
-//  同一オリジン(kohei-omura.github.io)なので CORS 不要。
-//  形式: {"days":{"2026-07-14":{"rokuyo":"赤口","moonAge":29.0,"lunar":"6/1"}}}
-//  取得できない/範囲外の日付は内蔵テーブルの現行計算にフォールバックし「※概算」表示。
+//  天文暦エンジン（二十四節気・朔・旧暦・六曜・月齢）
+//    太陽黄経: VSOP87 短縮版(Meeus 付録III) + 章動 + 光行差 … 誤差 約1秒角(≒30秒)
+//    朔     : Meeus 第49章（補正項すべて）                 … 誤差 1分未満
+//  旧暦は天保暦の規則（冬至を含む月=11月、中気を含まない月=閏月）で組み立てる。
+//  表を持たないため年の範囲に制限がない。
 // ════════════════════════════════════════════════════════════
-const CAL_URL_LG   = 'https://kohei-omura.github.io/GOV3/calendar.json';
-const CAL_CACHE_KEY= 'lgo_cal_v1';
-const CAL_TTL_MS   = 24 * 3600 * 1000;   // 24時間キャッシュ
-let   LGO_CAL      = null;               // { days:{...}, updated:'...' } | null
+const ASTRO = (() => {
+  const D2R = Math.PI / 180, JD_EPOCH = 2440587.5;
+  const norm = a => ((a % 360) + 360) % 360;
 
-function dateKeyLG(date) {
-  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
-}
+  // ΔT(秒) … Espenak & Meeus の多項式（2005-2050）。範囲外もなだらかに延長
+  function deltaT(jd) {
+    const y = 2000 + (jd - 2451545) / 365.25, t = y - 2000;
+    return 62.92 + 0.32217 * t + 0.005589 * t * t;
+  }
 
-// 実測値を1件返す。無ければ null（→呼び出し側が現行計算にフォールバック）
-function getCalDay(date) {
-  if(!LGO_CAL || !LGO_CAL.days) return null;
-  const e = LGO_CAL.days[dateKeyLG(date)];
-  if(!e || typeof e.rokuyo !== 'string') return null;
-  return {
-    rokuyo : e.rokuyo,
-    moonAge: (typeof e.moonAge === 'number') ? e.moonAge : null,
-    lunar  : (typeof e.lunar === 'string')   ? e.lunar   : null
-  };
-}
+  // ── VSOP87 地球日心黄経（係数 ×1e-8 rad）──────────────────
+  const L0 = [[175347046,0,0],[3341656,4.6692568,6283.07585],[34894,4.6261,12566.1517],[3497,2.7441,5753.3849],[3418,2.8289,3.5231],[3136,3.6277,77713.7715],[2676,4.4181,7860.4194],[2343,6.1352,3930.2097],[1324,0.7425,11506.7698],[1273,2.0371,529.691],[1199,1.1096,1577.3435],[990,5.233,5884.927],[902,2.045,26.298],[857,3.508,398.149],[780,1.179,5223.694],[753,2.533,5507.553],[505,4.583,18849.228],[492,4.205,775.523],[357,2.92,0.067],[317,5.849,11790.629],[284,1.899,796.298],[271,0.315,10977.079],[243,0.345,5486.778],[206,4.806,2544.314],[205,1.869,5573.143],[202,2.458,6069.777],[156,0.833,213.299],[132,3.411,2942.463],[126,1.083,20.775],[115,0.645,0.98],[103,0.636,4694.003],[102,0.976,15720.839],[102,4.267,7.114],[99,6.21,2146.17],[98,0.68,155.42],[86,5.98,161000.69],[85,1.3,6275.96],[85,3.67,71430.7],[80,1.81,17260.15],[79,3.04,12036.46],[75,1.76,5088.63],[74,3.5,3154.69],[74,4.68,801.82],[70,0.83,9437.76],[62,3.98,8827.39],[61,1.82,7084.9],[57,2.78,6286.6],[56,4.39,14143.5],[56,3.47,6279.55],[52,0.19,12139.55],[52,1.33,1748.02],[51,0.28,5856.48],[49,0.49,1194.45],[41,5.37,8429.24],[41,2.4,19651.05],[39,6.17,10447.39],[37,6.04,10213.29],[37,2.57,1059.38],[36,1.71,2352.87],[36,1.78,6812.77],[33,0.59,17789.85],[30,0.44,83996.85],[30,2.74,1349.87],[25,3.16,4690.48]];
+  const L1 = [[628331966747,0,0],[206059,2.678235,6283.07585],[4303,2.6351,12566.1517],[425,1.59,3.523],[119,5.796,26.298],[109,2.966,1577.344],[93,2.59,18849.23],[72,1.14,529.69],[68,1.87,398.15],[67,4.41,5507.55],[59,2.89,5223.69],[56,2.17,155.42],[45,0.4,796.3],[36,0.47,775.52],[29,2.65,7.11],[21,5.34,0.98],[19,1.85,5486.78],[19,4.97,213.3],[17,2.99,6275.96],[16,0.03,2544.31],[16,1.43,2146.17],[15,1.21,10977.08],[12,2.83,1748.02],[12,3.26,5088.63],[12,5.27,1194.45],[12,2.08,4694],[11,0.77,553.57],[10,1.3,6286.6],[10,4.24,1349.87],[9,2.7,242.73],[9,5.64,951.72],[8,5.3,2352.87],[6,2.65,9437.76],[6,4.67,4690.48]];
+  const L2 = [[52919,0,0],[8720,1.0721,6283.0758],[309,0.867,12566.152],[27,0.05,3.52],[16,5.19,26.3],[16,3.68,155.42],[10,0.76,18849.23],[9,2.06,77713.77],[7,0.83,775.52],[5,4.66,1577.34],[4,1.03,7.11],[4,3.44,5573.14],[3,5.14,796.3],[3,6.05,5507.55],[3,1.19,242.73],[3,6.12,529.69],[3,0.31,398.15],[3,2.28,553.57],[2,4.38,5223.69],[2,3.75,0.98]];
+  const L3 = [[289,5.844,6283.076],[35,0,0],[17,5.49,12566.15],[3,5.2,155.42],[1,4.72,3.52],[1,5.3,18849.23],[1,5.97,242.73]];
+  const L4 = [[114,3.142,0],[8,4.13,6283.08],[1,3.84,12566.15]];
+  const L5 = [[1,3.14,0]];
+  const series = (s, t) => { let v = 0; for (const [a, b, c] of s) v += a * Math.cos(b + c * t); return v; };
 
-async function loadCalendarLG() {
-  // ① キャッシュが生きていれば通信ゼロ
-  try {
-    const raw = localStorage.getItem(CAL_CACHE_KEY);
-    if(raw) {
-      const c = JSON.parse(raw);
-      if(c && c.t && (Date.now() - c.t) < CAL_TTL_MS && c.d && c.d.days) {
-        LGO_CAL = c.d;
-        return LGO_CAL;
+  // 太陽の視黄経(度)。jde = 力学時のユリウス日
+  function sunLongitude(jde) {
+    const tau = (jde - 2451545) / 365250;
+    const L = (series(L0, tau) + tau * (series(L1, tau) + tau * (series(L2, tau)
+            + tau * (series(L3, tau) + tau * (series(L4, tau) + tau * series(L5, tau)))))) / 1e8;
+    const T = tau * 10;
+    const Om = (125.04452 - 1934.136261 * T) * D2R;
+    const Ls = (280.4665 + 36000.7698 * T) * D2R, Lm = (218.3165 + 481267.8813 * T) * D2R;
+    const dpsi = -17.2 * Math.sin(Om) - 1.32 * Math.sin(2 * Ls) - 0.23 * Math.sin(2 * Lm) + 0.21 * Math.sin(2 * Om);
+    // 地心黄経 = 日心+180°、FK5補正 -0.09033"、章動、光行差 -20.4898"
+    return norm(L / D2R + 180 + (-0.09033 + dpsi - 20.4898) / 3600);
+  }
+
+  // 太陽黄経が target(度) になる瞬間の JD(UT)。jdGuess 付近をニュートン法で解く
+  function solarTermJd(target, jdGuess) {
+    let jd = jdGuess;
+    for (let i = 0; i < 8; i++) {
+      const jde = jd + deltaT(jd) / 86400;
+      const diff = ((target - sunLongitude(jde) + 540) % 360) - 180;
+      jd += diff * 365.2422 / 360;
+      if (Math.abs(diff) < 1e-7) break;
+    }
+    return jd;
+  }
+
+  // ── 朔（新月）… Meeus 第49章。k=0 が 2000-01-06 の朔 ─────────
+  function newMoonJd(k) {
+    const T = k / 1236.85, T2 = T * T, T3 = T2 * T, T4 = T3 * T;
+    let jde = 2451550.09766 + 29.530588861 * k + 0.00015437 * T2 - 0.00000015 * T3 + 0.00000000073 * T4;
+    const E  = 1 - 0.002516 * T - 0.0000074 * T2;
+    const M  = (2.5534 + 29.1053567 * k - 0.0000014 * T2 - 0.00000011 * T3) * D2R;
+    const Mp = (201.5643 + 385.81693528 * k + 0.0107582 * T2 + 0.00001238 * T3 - 0.000000058 * T4) * D2R;
+    const F  = (160.7108 + 390.67050284 * k - 0.0016118 * T2 - 0.00000227 * T3 + 0.000000011 * T4) * D2R;
+    const Om = (124.7746 - 1.56375588 * k + 0.0020672 * T2 + 0.00000215 * T3) * D2R;
+    const s = Math.sin;
+    jde += -0.4072 * s(Mp) + 0.17241 * E * s(M) + 0.01608 * s(2 * Mp) + 0.01039 * s(2 * F)
+      + 0.00739 * E * s(Mp - M) - 0.00514 * E * s(Mp + M) + 0.00208 * E * E * s(2 * M)
+      - 0.00111 * s(Mp - 2 * F) - 0.00057 * s(Mp + 2 * F) + 0.00056 * E * s(2 * Mp + M)
+      - 0.00042 * s(3 * Mp) + 0.00042 * E * s(M + 2 * F) + 0.00038 * E * s(M - 2 * F)
+      - 0.00024 * E * s(2 * Mp - M) - 0.00017 * s(Om) - 0.00007 * s(Mp + 2 * M)
+      + 0.00004 * s(2 * Mp - 2 * F) + 0.00004 * s(3 * M) + 0.00003 * s(Mp + M - 2 * F)
+      + 0.00003 * s(2 * Mp + 2 * F) - 0.00003 * s(Mp + M + 2 * F) + 0.00003 * s(Mp - M + 2 * F)
+      - 0.00002 * s(Mp - M - 2 * F) - 0.00002 * s(3 * Mp + M) + 0.00002 * s(4 * Mp);
+    const A = [[0.000325, 299.77, 0.107408, -0.009173], [0.000165, 251.88, 0.016321], [0.000164, 251.83, 26.651886],
+      [0.000126, 349.42, 36.412478], [0.00011, 84.66, 18.206239], [0.000062, 141.74, 53.303771],
+      [0.00006, 207.14, 2.453732], [0.000056, 154.84, 7.30686], [0.000047, 34.52, 27.261239],
+      [0.000042, 207.19, 0.121824], [0.00004, 291.34, 1.844379], [0.000037, 161.72, 24.198154],
+      [0.000035, 239.56, 25.513099], [0.000023, 331.55, 3.592518]];
+    for (const [c, a0, a1, a2 = 0] of A) jde += c * s((a0 + a1 * k + a2 * T2) * D2R);
+    return jde - deltaT(jde) / 86400;               // → UT
+  }
+
+  // JD(UT) → JST の通日（1970-01-01 = 0）
+  const jstDay = jd => Math.floor(jd - JD_EPOCH + 9 / 24);
+  // Date(端末ローカルの暦日) → 通日
+  const dayOf = date => Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
+  // 通日 d の JST 時刻 h 時の JD(UT)
+  const jdAt = (d, h) => d + JD_EPOCH + (h - 9) / 24;
+
+  const memo = new Map();
+  const cached = (key, fn) => { if (!memo.has(key)) memo.set(key, fn()); return memo.get(key); };
+
+  // その年の冬至を含む旧暦月の朔日（通日）と、その朔の k
+  const lunationK = jd => Math.floor((jd - 2451550.09766) / 29.530588861);
+  function monthStartContaining(day) {                // day を含む旧暦月の { k, start }
+    let k = lunationK(jdAt(day, 12)) + 1;
+    while (jstDay(newMoonJd(k)) > day) k--;
+    return { k, start: jstDay(newMoonJd(k)) };
+  }
+  const winterSolsticeDay = y => cached('ws' + y, () => jstDay(solarTermJd(270, 2440587.5 + Date.UTC(y, 11, 21) / 86400000)));
+
+  // 冬至月(11月)から次の冬至月までの 12〜13 か月を組み立てる
+  function lunarYear(y) {                              // y 年の冬至月から始まる
+    return cached('ly' + y, () => {
+      const a = monthStartContaining(winterSolsticeDay(y));
+      const b = monthStartContaining(winterSolsticeDay(y + 1));
+      const months = [];
+      for (let k = a.k; k <= b.k; k++) months.push({ k, start: jstDay(newMoonJd(k)) });
+      const n = months.length - 1;                     // 12 か 13
+      // 中気（太陽黄経が30°の倍数）の日
+      const zq = [];
+      let jd = solarTermJd(270, jdAt(months[0].start, 0) + 20);
+      for (let i = 0; i <= 13; i++) { zq.push(jstDay(jd)); jd = solarTermJd(norm(270 + 30 * (i + 1)), jd + 30.4); }
+      let num = 11, leapUsed = false;
+      for (let i = 0; i < n; i++) {
+        const m = months[i], end = months[i + 1].start;
+        const hasZq = zq.some(z => z >= m.start && z < end);
+        if (i > 0) {
+          if (n === 13 && !hasZq && !leapUsed) { m.leap = true; leapUsed = true; }
+          else num = num % 12 + 1;
+        }
+        m.month = num;
+        m.len = end - m.start;
+      }
+      months.pop();
+      return months;
+    });
+  }
+
+  // 旧暦 { month, day, leap }
+  function lunarDate(date) {
+    const d = dayOf(date), y = date.getFullYear();
+    for (const yy of [y, y - 1]) {
+      const ms = lunarYear(yy);
+      if (d >= ms[0].start) {
+        for (let i = ms.length - 1; i >= 0; i--) {
+          if (d >= ms[i].start) return { month: ms[i].month, day: d - ms[i].start + 1, leap: !!ms[i].leap };
+        }
       }
     }
-  } catch(e) { /* 破損キャッシュは無視して再取得 */ }
-
-  // ② 実測値を取得（6秒でタイムアウト。失敗しても致命的にしない）
-  try {
-    const ac = ('AbortController' in window) ? new AbortController() : null;
-    const to = ac ? setTimeout(() => ac.abort(), 6000) : null;
-    const res = await fetch(CAL_URL_LG, { cache:'no-cache', signal: ac ? ac.signal : undefined });
-    if(to) clearTimeout(to);
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
-    if(!json || !json.days) throw new Error('bad shape');
-    LGO_CAL = json;
-    try { localStorage.setItem(CAL_CACHE_KEY, JSON.stringify({ t: Date.now(), d: json })); } catch(e){}
-    return LGO_CAL;
-  } catch(e) {
-    console.warn('[LGO暦] 実測データ取得失敗 → 内蔵計算にフォールバック:', e && e.message);
-    // ③ 期限切れでも残っていれば使う（オフライン救済）
-    try {
-      const raw = localStorage.getItem(CAL_CACHE_KEY);
-      if(raw) { const c = JSON.parse(raw); if(c && c.d && c.d.days) { LGO_CAL = c.d; return LGO_CAL; } }
-    } catch(e2) {}
-    LGO_CAL = null;
     return null;
   }
-}
 
-const LUNAR_DATA_LG = {
-  2023:{sf:[1,22],m:[30,30,29,30,29,30,29,30,29,29,30,29,30],lp:2},
-  2024:{sf:[2,10],m:[30,29,30,30,29,30,29,30,29,30,29,29],lp:null},
-  2025:{sf:[1,29],m:[30,29,30,29,30,30,29,30,29,30,29,29],lp:null},
-  2026:{sf:[2,17],m:[30,29,30,29,30,30,29,30,29,30,29,30],lp:null},
-  2027:{sf:[2,6], m:[29,30,29,30,29,30,30,29,30,30,29,29],lp:null},
-  2028:{sf:[1,26],m:[30,29,30,29,30,29,30,29,30,30,30,29,29],lp:5},
-};
+  // 月齢（JST 正午時点・国立天文台/ajnet 準拠、0.1日単位）
+  function moonAge(date) {
+    const t = jdAt(dayOf(date), 12);
+    let k = lunationK(t) + 1;
+    while (newMoonJd(k) > t) k--;
+    return Math.round((t - newMoonJd(k)) * 10) / 10;
+  }
 
-function solarToLunarLG(sy, sm, sd) {
-  const date = new Date(sy, sm-1, sd);
-  let ly = sy;
-  let d = LUNAR_DATA_LG[ly];
-  if(!d) return { month: sm, day: sd };
-  let sf = new Date(ly, d.sf[0]-1, d.sf[1]);
-  if(date < sf) {
-    ly--; d = LUNAR_DATA_LG[ly];
-    if(!d) return { month: sm, day: sd };
-    sf = new Date(ly, d.sf[0]-1, d.sf[1]);
+  // その日の終わり(JST 24時)時点の太陽黄経 … 節入り当日を新しい月に含めるため
+  const sunLongitudeEndOfDay = date => { const jd = jdAt(dayOf(date) + 1, 0); return sunLongitude(jd + deltaT(jd) / 86400); };
+
+  // 節月（寅月=1 … 丑月=12）と、立春で切り替わる干支年
+  function sekkiMonth(date) {
+    const lam = sunLongitudeEndOfDay(date);
+    const mn = Math.floor(norm(lam - 315) / 30) + 1;
+    let year = date.getFullYear();
+    if (date.getMonth() <= 1 && mn >= 11) year--;      // 1〜2月で立春前 → 前年扱い
+    return { mn, year };
   }
-  let rem = Math.floor((date - sf) / 86400000);
-  let lm = 1;
-  const leapM = d.lp;
-  for(let i = 0; i < d.m.length; i++) {
-    if(rem < d.m[i]) return { month: lm, day: rem + 1 };
-    rem -= d.m[i];
-    if(leapM && i === leapM - 1) lm--;
-    lm++;
-  }
-  return { month: lm, day: rem + 1 };
-}
+
+  return { sunLongitude, solarTermJd, newMoonJd, jstDay, dayOf, lunarDate, moonAge, sekkiMonth,
+           winterSolsticeDay, summerSolsticeDay: y => cached('ss' + y, () => jstDay(solarTermJd(90, 2440587.5 + Date.UTC(y, 5, 21) / 86400000))) };
+})();
 
 const ROKUYO = ['先勝','友引','先負','仏滅','大安','赤口'];
 const ROKUYO_AURA = {
@@ -528,22 +604,13 @@ const ROKUYO_AURA = {
 };
 
 function getRokuyo(date) {
-  const lunar = solarToLunarLG(date.getFullYear(), date.getMonth()+1, date.getDate());
-  const idx = ((lunar.month + lunar.day - 2) % 6 + 6) % 6;
-  return ROKUYO[idx];
+  const l = ASTRO.lunarDate(date);
+  return ROKUYO[(l.month + l.day - 2) % 6];
 }
 
-// 月齢: 既知の新月 2026-06-15 00:00 JST を基準にした朔望月計算
-// （ajnet.ne.jp 暦・Star Walk と一致: 6/23=8.0, 6/30=15.0）
-const BASE_NEWMOON_MS = Date.UTC(2026,5,15,0,0,0) - 9*3600000; // 2026-06-15 0:00 JST
-const SYNODIC_LG = 29.53058867;
-function getMoonAgeJST(now = new Date()) {
-  // ts = JST午前0時に対応するUTCミリ秒
-  const ts = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - 9*3600000;
-  let age = ((ts - BASE_NEWMOON_MS) / 86400000) % SYNODIC_LG;
-  if(age < 0) age += SYNODIC_LG;
-  age = Math.round(age * 10) / 10;
-  return age >= SYNODIC_LG ? 0 : age;
+// 月齢は JST 正午時点の値（国立天文台・ajnet と同じ定義）
+function getMoonAgeJST(date = new Date()) {
+  return ASTRO.moonAge(date);
 }
 
 // 月の呼び名 = starwalk.space(Star Walk)の8フェーズ定義に準拠
@@ -565,37 +632,26 @@ const KYUSEI_ELEMENT = {
   '一白水星':'水','二黒土星':'土','三碧木星':'木','四緑木星':'木',
   '五黄土星':'土','六白金星':'金','七赤金星':'金','八白土星':'土','九紫火星':'火'
 };
-const BIRTH_KYUSEI = '七赤金星';
-const BIRTH_KYUSEI_ELEMENT = '金';
-const BIRTH_MONTH_KYUSEI = '四緑木星';
-const BIRTH_MONTH_ELEMENT = '木';
 
+// 年盤: 立春で切り替わる干支年 y に対し (11 - y mod 9) が本命星番号（0→9）
 function getYearBoard(now) {
-  const y = (now.getMonth() < 1 || (now.getMonth() === 1 && now.getDate() < 4))
-    ? now.getFullYear() - 1 : now.getFullYear();
-  const ep = Math.floor(Date.UTC(y,0,1) / 86400000);
-  return KYUSEI_LIST[(ep + 3) % 9];
+  const y = ASTRO.sekkiMonth(now).year;
+  return KYUSEI_LIST[((11 - y % 9) % 9 + 8) % 9];
 }
 
-const SETSU_TABLE_M = {
-  2024:[6,4,5,4,5,5,7,7,7,8,7,7],
-  2025:[5,3,5,4,5,5,7,7,7,8,7,7],
-  2026:[5,4,5,5,5,6,7,7,7,8,7,7],
-  2027:[6,4,6,5,5,6,7,7,8,8,7,7],
-  2028:[6,4,5,4,5,5,7,7,7,8,7,7],
-  2029:[5,3,5,4,5,5,7,7,7,8,7,7],
-  2030:[5,4,6,5,5,6,7,8,8,8,7,7],
-};
-
+// 月盤: 寅月(立春〜)の九星は年盤で決まり、以後1か月ごとに1つずつ逆行
+const TIGER_IDX_M = {'一白水星':7,'二黒土星':4,'三碧木星':1,'四緑木星':7,'五黄土星':4,'六白金星':1,'七赤金星':7,'八白土星':4,'九紫火星':1};
 function getMonthBoard(now) {
-  const y = now.getFullYear(), m = now.getMonth()+1, d = now.getDate();
-  const TIGER_IDX_M = {'一白水星':7,'二黒土星':4,'三碧木星':1,'四緑木星':7,'五黄土星':4,'六白金星':1,'七赤金星':7,'八白土星':4,'九紫火星':1};
-  const setsu = SETSU_TABLE_M[y] || SETSU_TABLE_M[2026];
-  let mn = d >= setsu[m-1] ? m-1 : m-2;
-  if(mn<=0) mn+=12;
+  const { mn } = ASTRO.sekkiMonth(now);
   const ti = TIGER_IDX_M[getYearBoard(now)];
-  return KYUSEI_LIST[((ti-(mn-1))%9+9)%9];
+  return KYUSEI_LIST[((ti - (mn - 1)) % 9 + 9) % 9];
 }
+
+// 本命星・月命星は出生日(1993-04-14)から天文暦で算出 → 七赤金星 / 六白金星
+//（旧版は月命星を「四緑木星」と誤って固定していた。七赤年の辰月は六白）
+const BIRTH_KYUSEI       = getYearBoard(new Date(1993, 3, 14, 12));
+const BIRTH_KYUSEI_ELEMENT = KYUSEI_ELEMENT[BIRTH_KYUSEI];
+const BIRTH_MONTH_KYUSEI = getMonthBoard(new Date(1993, 3, 14, 12));
 
 const GOGYO_COMPAT = {
   '金': { '土':10, '金':8, '水':-2, '木':-3, '火':-6 },
@@ -620,33 +676,6 @@ function kanshiNoLG(date) {
   return ((epochDayLG(date) + 17) % 60 + 60) % 60;
 }
 
-// 至点(Meeus 低精度式, 誤差<数分)。戻り値は JD(TD)。june=true で夏至
-const SOLSTICE_TERMS_LG = [
-  [485,324.96,1934.136],[203,337.23,32964.467],[199,342.08,20.186],[182,27.85,445267.112],
-  [156,73.14,45036.886],[136,171.52,22518.443],[77,222.54,65928.934],[74,296.72,3034.906],
-  [70,243.58,9037.513],[58,119.81,33718.147],[52,297.17,150.678],[50,21.02,2281.226],
-  [45,247.54,29929.562],[44,325.15,31555.956],[29,60.93,4443.417],[18,155.12,67555.328],
-  [17,288.79,4562.452],[16,198.04,62894.029],[14,199.76,31436.921],[12,95.39,14577.848],
-  [12,287.11,31931.756],[12,320.81,34777.259],[9,227.73,1222.114],[8,15.45,16859.074]
-];
-function solsticeJdLG(year, june) {
-  const D = Math.PI/180;
-  const Y = (year - 2000) / 1000;
-  const J0 = june
-    ? 2451716.56767 + 365241.62603*Y + 0.00325*Y*Y + 0.00888*Y*Y*Y - 0.00030*Y*Y*Y*Y
-    : 2451900.05952 + 365242.74049*Y - 0.06223*Y*Y - 0.00823*Y*Y*Y + 0.00032*Y*Y*Y*Y;
-  const T = (J0 - 2451545.0) / 36525;
-  const W = 35999.373*T - 2.47;
-  const dl = 1 + 0.0334*Math.cos(W*D) + 0.0007*Math.cos(2*W*D);
-  let S = 0;
-  for(const [A,B,C] of SOLSTICE_TERMS_LG) S += A * Math.cos((B + C*T)*D);
-  return J0 + (0.00001*S)/dl;
-}
-// 至日のJST日付を epochDay(UTC基準の通日) で返す
-function solsticeEpochDayLG(year, june) {
-  const jd = solsticeJdLG(year, june) + 9/24;          // JST
-  return Math.floor(jd + 0.5) - 2440588;               // JD→epochDay
-}
 // 至日に最も近い甲子日の epochDay（等距離なら至日前を優先）
 function nearestKoshiEpochLG(solEp) {
   // 甲子は kanshiNo(ep) = ((ep+17)%60)==0 → ep ≡ 43 (mod 60)
@@ -661,8 +690,8 @@ const KOSHI_CACHE_LG = {};
 function anchorsForYearLG(y) {
   if(KOSHI_CACHE_LG[y]) return KOSHI_CACHE_LG[y];
   const a = [
-    { ep: nearestKoshiEpochLG(solsticeEpochDayLG(y, false)), inton:false }, // 冬至 → 陽遁(一白順行)
-    { ep: nearestKoshiEpochLG(solsticeEpochDayLG(y, true )), inton:true  }  // 夏至 → 陰遁(九紫逆行)
+    { ep: nearestKoshiEpochLG(ASTRO.winterSolsticeDay(y)), inton:false }, // 冬至 → 陽遁(一白順行)
+    { ep: nearestKoshiEpochLG(ASTRO.summerSolsticeDay(y)), inton:true  }  // 夏至 → 陰遁(九紫逆行)
   ];
   KOSHI_CACHE_LG[y] = a;
   return a;
@@ -733,9 +762,7 @@ const BIRTH_ELEM = getBirthElement(1993, 4, 14);
 const BIRTH_DATE = new Date(1993, 3, 14);
 
 function getYearPillar(date) {
-  const y=date.getFullYear(), m=date.getMonth()+1, d=date.getDate();
-  const st=(SETSU_TABLE_M&&SETSU_TABLE_M[y])?SETSU_TABLE_M[y][1]:4;
-  const adjY=(m===1||(m===2&&d<st))?y-1:y;
+  const adjY = ASTRO.sekkiMonth(date).year;           // 立春で年が替わる
   const si=((adjY-4)%10+10)%10, bi=((adjY-4)%12+12)%12;
   return{pillar:STEMS[si]+BRANCHES[bi],stem:STEMS[si],branch:BRANCHES[bi],element:ELEM_STEM[STEMS[si]],year:adjY};
 }
@@ -743,12 +770,9 @@ function getYearPillar(date) {
 const GOKOTON_BASE={甲:2,己:2,乙:4,庚:4,丙:6,辛:6,丁:8,壬:8,戊:0,癸:0};
 
 function getMonthPillar(date) {
-  const y=date.getFullYear(),m=date.getMonth()+1,d=date.getDate();
-  const setsu=(SETSU_TABLE_M&&SETSU_TABLE_M[y])||SETSU_TABLE_M[2026];
-  let mn=d>=setsu[m-1]?m-1:m-2; if(mn<=0)mn+=12;
+  const { mn } = ASTRO.sekkiMonth(date);              // 節入りで月が替わる（寅月=1）
   const bi=(mn+1)%12;
-  const yStem=getYearPillar(date).stem;
-  const base=GOKOTON_BASE[yStem]||0;
+  const base=GOKOTON_BASE[getYearPillar(date).stem]||0;
   const si=(base+mn-1)%10;
   return{pillar:STEMS[si]+BRANCHES[bi],stem:STEMS[si],branch:BRANCHES[bi],element:ELEM_STEM[STEMS[si]],monthNum:mn};
 }
@@ -956,7 +980,10 @@ function calcScoreFull(rokuyo,moon,pillar,now,monthPillar,hourPillar,moonSign,zi
   s += Math.round((numerology.compatScore || 5) * 0.8);
   const db=[4,2,5,3,6,4,8,3,5,2,6,4,5,3,4,6,5,2,6,4,5,3,4,6,5,3,4,5,2,4,4];
   s+=db[now.getDate()%db.length];
-  return Math.min(99,Math.max(50,s));
+  // 素点は約76〜119（中央値97）。旧版は 50〜99 で頭打ちにしていたため
+  // 約6割の日が95〜99点に張り付き、運気の差が見えなかった。
+  // 素点 76→50点 / 116→99点 の線形写像で、平常日≈75点・上位1%≈90点超に広げる。
+  return Math.min(99, Math.max(50, Math.round(50 + (s - 76) * 49 / 40)));
 }
 
 const TAROT = [
@@ -984,9 +1011,18 @@ const TAROT = [
   {n:'世界', eng:'dancing girl in cosmic wreath, completion, bliss'},
 ];
 
+// 日付文字列の32bitハッシュ（FNV-1a + 攪拌）。日ごとに独立したカードを引く。
+// 旧版は YYYYMMDD % 22 だったため、毎日デッキの順番どおりに1枚ずつ進んでいた。
+function dayHash(date, salt) {
+  let h = 0x811c9dc5;
+  const str = `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}|${salt}`;
+  for(let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13;
+  return h >>> 0;
+}
+
 function getTarot(now) {
-  const seed = now.getFullYear()*10000 + (now.getMonth()+1)*100 + now.getDate();
-  return TAROT[seed % TAROT.length];
+  return TAROT[dayHash(now, 'tarot:1993-04-14') % TAROT.length];
 }
 
 function calcScore(rokuyo, moon, pillar, now) {
@@ -1009,12 +1045,10 @@ const LUCKY_COLORS = {
 let currentDiv        = null;
 let currentPromptData = null;
 let currentImageUrl   = null;
-let currentFile       = null;  // navigator.share 用の File
-let currentObjUrl     = null;  // <a download> 用の ObjectURL
 let lastKeyedObjUrl   = null;  // keyed表示用blobURL（次回生成時に解放しメモリ蓄積を防ぐ）
 let isGenerating      = false;
 let GEN_TOKEN         = 0;   // 世代トークン：最新の生成のみ finish を許可（二重finish防止）
-let histRenderCount   = 30;  // 履歴の初期表示件数（「もっと見る」で+30）
+let histRenderCount   = 30;  // 履歴の表示件数（「もっと見る」で+HIST_PAGE）
 let _favOnly          = false;  // 機能B: ★のみ表示フィルタ
 let currentStyle = 'anime';
 let freeStyle    = 'anime';
@@ -1037,6 +1071,7 @@ function setFreeStyle(s) {
   try { localStorage.setItem('lg_freestyle', s); } catch(e){}
   document.getElementById('btnFreeAnime').className = 'style-btn' + (s==='anime' ? ' active-anime' : '');
   document.getElementById('btnFreeReal').className  = 'style-btn' + (s==='real'  ? ' active-real'  : '');
+  if(typeof PROMPT_MAX !== 'undefined') updateFreeCount();
 }
 function initStyleUI() {
   setStyle(currentStyle);
@@ -1048,15 +1083,11 @@ function initStyleUI() {
 // ════════════════════════════════════════
 function computeToday() {
   const now        = new Date();
-  // ── 修正1: 六曜・月齢・旧暦は実測データ(calendar.json)を最優先。取得不可なら現行計算＋「※概算」
-  const cal        = getCalDay(now);
-  const calOk      = !!(cal && cal.rokuyo);
-  const isApprox   = !calOk;
-  const rokuyo     = calOk ? cal.rokuyo : getRokuyo(now);
-  const moonAgeJST = (calOk && cal.moonAge !== null) ? cal.moonAge : getMoonAgeJST();
-  const lunarStr   = (calOk && cal.lunar)
-    ? cal.lunar
-    : (() => { const l = solarToLunarLG(now.getFullYear(), now.getMonth()+1, now.getDate()); return `${l.month}/${l.day}`; })();
+  // 六曜・月齢・旧暦は天文暦エンジンで算出（ajnet 実測暦 415日分と完全一致を確認済み）
+  const lunarObj   = ASTRO.lunarDate(now);
+  const rokuyo     = ROKUYO[(lunarObj.month + lunarObj.day - 2) % 6];
+  const moonAgeJST = ASTRO.moonAge(now);
+  const lunarStr   = `${lunarObj.leap ? '閏' : ''}${lunarObj.month}/${lunarObj.day}`;
   const moon       = { ...getMoonPhase(moonAgeJST), age: moonAgeJST };
   const pillar     = getDayPillar(now);
   const yearPillar = getYearPillar(now);
@@ -1078,7 +1109,7 @@ function computeToday() {
   return { now, rokuyo, moon, pillar, yearPillar, monthPillar, hourPillar,
            tarot, kyusei, kyuseiInfo, moonSign, ascendant, ziwei, numerology,
            tsuhenDay, tenchusatsu, score, element, elemLabel, luckyColors,
-           lunar: lunarStr, isApprox, ascPlace: BIRTH_PLACE_LG.label };
+           lunar: lunarStr, ascPlace: BIRTH_PLACE_LG.label };
 }
 
 // ════════════════════════════════════════
@@ -1087,19 +1118,16 @@ function computeToday() {
 function updateUI(div) {
   const { now, rokuyo, moon, pillar, yearPillar, monthPillar, hourPillar, tarot, kyusei,
           kyuseiInfo, moonSign, ascendant, ziwei, numerology, tsuhenDay, tenchusatsu,
-          score, element, elemLabel, luckyColors, lunar, isApprox, ascPlace } = div;
+          score, element, elemLabel, luckyColors, lunar, ascPlace } = div;
 
-  const approxTag = isApprox
-    ? '<span style="font-size:.58rem;color:var(--muted);margin-left:3px;vertical-align:super">※概算</span>'
-    : '';
 
   const dow = '日月火水木金土'[now.getDay()];
   document.getElementById('headerDate').textContent =
     `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日（${dow}）`;
 
   const fbRokuyoEl = document.getElementById('fb-rokuyo');
-  fbRokuyoEl.innerHTML = rokuyo + approxTag;
-  fbRokuyoEl.title = isApprox ? '実測暦データ未取得のため内蔵計算による概算値' : '実測暦データ(ajnet)準拠';
+  fbRokuyoEl.textContent = rokuyo;
+  fbRokuyoEl.title = `旧暦${lunar}`;
   document.getElementById('fb-moon').textContent   = moon.icon + ' ' + moon.name;
   document.getElementById('fb-kyusei').textContent = kyusei;
 
@@ -1136,14 +1164,14 @@ function updateUI(div) {
 
   document.getElementById('divGrid').innerHTML = `
     <div class="div-item"><div class="div-item-label">📅 六曜</div>
-      <div class="div-item-value" style="color:${rokuyoData.color}">${rokuyo}${approxTag}</div>
+      <div class="div-item-value" style="color:${rokuyoData.color}">${rokuyo}</div>
       <div class="div-item-sub">旧暦${lunar} ／ ${rokuyoDesc[rokuyo]||rokuyoData.adj+'な日'}</div></div>
     <div class="div-item"><div class="div-item-label">${moon.icon} 月相・月齢</div>
       <div class="div-item-value" style="color:var(--violet)">${moon.name}</div>
       <div class="div-item-sub">月齢${moon.age}日 ${moonDesc[moon.name]||''}</div></div>
     <div class="div-item"><div class="div-item-label">🔮 九星気学</div>
       <div class="div-item-value" style="color:var(--gold)">${kyusei}</div>
-      <div class="div-item-sub">${kyuseiInfo?'年:'+kyuseiInfo.yearBoard+' 月:'+kyuseiInfo.monthBoard+' 日:'+kyuseiInfo.dayKyusei:''}</div></div>
+      <div class="div-item-sub">月命:${BIRTH_MONTH_KYUSEI}<br>${kyuseiInfo?'年:'+kyuseiInfo.yearBoard+' 月:'+kyuseiInfo.monthBoard+' 日:'+kyuseiInfo.dayKyusei:''}</div></div>
     <div class="div-item"><div class="div-item-label">🃏 タロット</div>
       <div class="div-item-value" style="color:var(--rose)">${tarot.n}</div>
       <div class="div-item-sub">${tarot.eng.split(',')[0]}</div></div>
@@ -1426,22 +1454,15 @@ function buildPrompt(div) {
     ? 'cinematic lighting, bokeh, dynamic composition, vibrant colors'
     : 'sharp focus, depth of field, natural skin texture, 4k';
 
-  const customPart = custom ? custom + ',' : '';
 
+  // 追加リクエストは接頭辞の直後に置く。
+  //   旧版は末尾近くに置いたうえ全体を 400 文字で切っていたため、
+  //   入力した「赤いドレス」等が毎回まるごと切り捨てられていた。
+  //   長さの調整は URL 組み立て側(PROMPT_MAX=900・末尾から削る)に一本化。
   const fullPrompt = [
-    stylePrefix,
-    charBase,
-    elemScene + ',',
-    tarotAura + ',',
-    moonVisual + ',',
-    rokuyoVibe + ',',
-    kyuseiAccent + ',',
-    pillarAccent + ',',
-    numEffect + ',',
-    scoreEffect + ',',
-    customPart,
-    qualityTags,
-  ].filter(Boolean).join(' ').slice(0, 400);
+    stylePrefix, custom, charBase, elemScene, tarotAura, moonVisual, rokuyoVibe,
+    kyuseiAccent, pillarAccent, numEffect, scoreEffect, qualityTags,
+  ].map(x => String(x || '').trim().replace(/,+$/, '')).filter(Boolean).join(', ');
 
   const negPrompt = 'nude, nsfw, bad anatomy, extra limbs, blurry, low quality, watermark, ugly, deformed, revealing, exposed';
 
@@ -1488,11 +1509,78 @@ function openDB() {
   });
 }
 
+const MODE_LABEL       = { oracle:'🔮 占い', custom:'✍️ フリー', img2img:'🖼️ 画像参照' };
+const HISTORY_MAX      = 200; // これを超えた古い履歴(非★)はIndexedDBから物理削除
+const HISTORY_FULL_MAX = 20;  // フル解像度を保持する件数（★は件数に関係なく常に保持）
+const HIST_PAGE        = 30;  // 「もっと見る」1回あたりの件数
+
+// 生成結果を履歴へ保存する（imageData=サムネのdata URL / full=フル解像度Blob）
+//   旧版はサムネ(768px)しか残さなかったため、アプリを開き直すと
+//   「保存」が低解像度のサムネになっていた。
+function saveToHistory(promptData, imageData, extraInfo, fullBlob) {
+  const now = currentDiv ? currentDiv.now : new Date();
+  const record = {
+    id:      newHistoryId(),
+    date:    `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`,
+    theme:   promptData.theme  || '—',
+    style:   promptData.style  || currentStyle,
+    mode:    promptData.mode   || 'oracle',
+    prompt:  promptData.prompt || '',
+    negative:promptData.negative || '',
+    imageData,
+    score:   currentDiv ? currentDiv.score  : null,
+    rokuyo:  currentDiv ? currentDiv.rokuyo : null,
+    savedAt: Date.now(),
+    ...(extraInfo || {}),
+  };
+  if(fullBlob) record.full = fullBlob;
+  openDB().then(db => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    // add だと同一ミリ秒のID衝突で例外になり履歴が欠けるため put を使う
+    tx.objectStore(STORE_NAME).put(record);
+    tx.oncomplete = () => { histCacheUnshift(record); renderHistory(); pruneHistory(); };
+    // 容量不足などでフル解像度ごと入らない時は、サムネだけでも残す
+    // （中断時は onerror と onabort の両方が来るため、1回だけ再試行する）
+    let retried = false;
+    tx.onerror = tx.onabort = () => {
+      if(retried || !record.full) return;
+      retried = true; delete record.full; saveToHistoryRecord(record);
+    };
+  }).catch(e => console.warn('DB save error:', e));
+}
+function saveToHistoryRecord(record) {
+  openDB().then(db => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(record);
+    tx.oncomplete = () => { histCacheUnshift(record); renderHistory(); };
+  }).catch(() => {});
+}
+
+// 古い履歴の整理: 非★の200件超は削除、非★の21件目以降はフル解像度だけ外す
+function pruneHistory() {
+  if(!_histCache) return;
+  const nonFav = _histCache.filter(h => !h.fav);
+  const drop  = nonFav.slice(HISTORY_MAX);
+  const strip = nonFav.slice(HISTORY_FULL_MAX, HISTORY_MAX).filter(h => h.full);
+  if(!drop.length && !strip.length) return;
+  openDB().then(db => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const st = tx.objectStore(STORE_NAME);
+    drop.forEach(h => st.delete(h.id));
+    strip.forEach(h => { delete h.full; st.put(h); });
+    tx.oncomplete = () => {
+      if(drop.length) {
+        const ids = new Set(drop.map(h => h.id));
+        _histCache = _histCache.filter(h => !ids.has(h.id));
+        renderHistory();
+      }
+    };
+  }).catch(() => {});
+}
+
 /* ────────────────────────────────────────────────────────────
    履歴キャッシュ
-     旧版は再描画のたびに getAll() で全レコード（＝サムネのbase64を
-     最大200件・数十MB）を読み直していたため、★の切替や「もっと見る」
-     だけでも重い読み込みが走っていた。
+     旧版は再描画のたびに getAll() で全レコードを読み直していた。
      セッション中は1度だけ読み、以後は差分をメモリ側に反映する。
    ──────────────────────────────────────────────────────────── */
 let _histCache = null;
@@ -1504,6 +1592,7 @@ function newHistoryId() {
 function histCacheUnshift(rec) {
   if(_histCache) _histCache.unshift(rec);
 }
+const histFind = id => (_histCache || []).find(h => String(h.id) === String(id));
 
 function loadHistory(force) {
   if(_histCache && !force) return Promise.resolve(_histCache);
@@ -1518,139 +1607,105 @@ function loadHistory(force) {
   }));
 }
 
-// 生成結果を履歴へ保存する（画像はサムネのdata URL）
-function saveToHistory(promptData, imageData, extraInfo) {
-  const now = currentDiv ? currentDiv.now : new Date();
-  const record = {
-    id:      newHistoryId(),
-    date:    `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`,
-    theme:   promptData.theme  || '—',
-    style:   promptData.style  || currentStyle,
-    mode:    promptData.mode   || 'oracle',
-    prompt:  promptData.prompt || '',
-    imageData,
-    score:   currentDiv ? currentDiv.score  : null,
-    rokuyo:  currentDiv ? currentDiv.rokuyo : null,
-    savedAt: Date.now(),
-    ...(extraInfo || {}),
-  };
-  openDB().then(db => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    // add だと同一ミリ秒のID衝突で例外になり履歴が欠けるため put を使う
-    tx.objectStore(STORE_NAME).put(record);
-    tx.oncomplete = () => { histCacheUnshift(record); renderHistory(); };
-  }).catch(e => console.warn('DB save error:', e));
+function histView() {
+  return _favOnly ? (_histCache || []).filter(h => h.fav) : (_histCache || []);
+}
+function histItemHtml(h) {
+  const label = h.date ? h.date.slice(5).replace('-','/') : '—';
+  const id    = esc(h.id);
+  return `<div class="hist-item" data-id="${id}" data-act="open">
+    <img class="hist-img" src="${h.imageData||''}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.style.opacity='.4'">
+    <div class="hist-overlay">
+      <div class="hist-date">${esc(label)} ${MODE_LABEL[h.mode] || ''}</div>
+      <div class="hist-theme">${esc(h.rokuyo||'')} ${h.score ? esc(h.score)+'pt' : ''}</div>
+    </div>
+    <button class="hist-del" data-act="del" aria-label="削除">×</button>
+    <button class="hist-fav${h.fav ? ' on' : ''}" data-act="fav" aria-label="お気に入り">${h.fav ? '★' : '☆'}</button>
+  </div>`;
+}
+function histMoreHtml(rest) {
+  return rest > 0 ? `<button class="hist-more" data-act="more">▽ もっと見る（残り${rest}件）</button>` : '';
+}
+
+// 全体描画（初回・保存・フィルタ切替時）。★切替・削除・もっと見るは差分更新で済ませる
+function renderHistory() {
+  loadHistory().then(() => {
+    const grid = document.getElementById('historyGrid');
+    if(!grid) return;
+    const view = histView();
+    if(!view.length) {
+      grid.innerHTML = _favOnly
+        ? '<div class="no-history" style="grid-column:1/-1">★お気に入りはまだありません<br><small>履歴カードの☆を押すと登録できます</small></div>'
+        : '<div class="no-history" style="grid-column:1/-1">まだ履歴がありません<br><small>画像が生成されると保存されます</small></div>';
+      return;
+    }
+    grid.innerHTML = view.slice(0, histRenderCount).map(histItemHtml).join('') + histMoreHtml(view.length - histRenderCount);
+  }).catch(e => console.warn('renderHistory:', e));
+}
+
+function showMoreHistory() {
+  const grid = document.getElementById('historyGrid');
+  const view = histView();
+  const from = histRenderCount;
+  histRenderCount += HIST_PAGE;
+  const more = grid.querySelector('.hist-more');
+  if(more) more.remove();
+  grid.insertAdjacentHTML('beforeend', view.slice(from, histRenderCount).map(histItemHtml).join('') + histMoreHtml(view.length - histRenderCount));
 }
 
 // ★お気に入りトグル（IndexedDBに fav:true を保存・旧レコード互換）
-function toggleFav(id, ev) {
-  if(ev) ev.stopPropagation();
-  openDB().then(db => new Promise(res => {
+function toggleFav(id) {
+  const rec = histFind(id);
+  if(!rec) return;
+  rec.fav = !rec.fav;
+  openDB().then(db => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const g = store.get(id);
-    g.onsuccess = () => { const rec = g.result; if(rec) { rec.fav = !rec.fav; store.put(rec); } };
-    tx.oncomplete = res; tx.onerror = res;
-  })).then(() => {
-    const c = _histCache && _histCache.find(h => h.id === id);
-    if(c) c.fav = !c.fav;
-    renderHistory();
+    tx.objectStore(STORE_NAME).put(rec);
   }).catch(e => console.warn('toggleFav:', e));
+  const el = document.querySelector(`.hist-item[data-id="${CSS.escape(String(id))}"]`);
+  if(_favOnly && !rec.fav) { renderHistory(); return; }
+  const b = el && el.querySelector('.hist-fav');
+  if(b) { b.classList.toggle('on', rec.fav); b.textContent = rec.fav ? '★' : '☆'; }
 }
 
 function toggleFavFilter() {
   _favOnly = !_favOnly;
   const b = document.getElementById('favFilterBtn');
   if(b) { b.classList.toggle('active', _favOnly); b.textContent = _favOnly ? '★ お気に入りのみ' : '★ のみ表示'; }
-  histRenderCount = 30;
+  histRenderCount = HIST_PAGE;
   renderHistory();
 }
 
 function deleteHistoryEntry(id) {
-  openDB().then(db => new Promise(res => {
-    // ★お気に入りは削除しない（誤タップ防止）。先に★を外す必要がある
+  const rec = histFind(id);
+  if(!rec) return;
+  // ★お気に入りは削除しない（誤タップ防止）。先に★を外す必要がある
+  if(rec.fav) { showToast('★お気に入りの画像です。削除するには先に★を外してください'); return; }
+  openDB().then(db => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const g = store.get(id);
-    let blocked = false;
-    g.onsuccess = () => {
-      const rec = g.result;
-      if(rec && rec.fav) { blocked = true; return; }
-      store.delete(id);
+    tx.objectStore(STORE_NAME).delete(rec.id);
+    tx.oncomplete = () => {
+      _histCache = _histCache.filter(h => h !== rec);
+      const el = document.querySelector(`.hist-item[data-id="${CSS.escape(String(id))}"]`);
+      // 表示中の枠が空く → 全体描画で次の1件を繰り上げる（件数が少ないので安価）
+      if(el) renderHistory();
     };
-    tx.oncomplete = () => res(blocked);
-    tx.onerror    = () => res(false);
-  })).then(blocked => {
-    if(blocked) { alert('★お気に入りの画像です。削除するには、先に★を外してください。'); return; }
-    if(_histCache) _histCache = _histCache.filter(h => h.id !== id);
-    renderHistory();
   }).catch(e => console.warn('deleteHistoryEntry:', e));
 }
 
-// 再描画を伴わない静かな削除（200件超の自動整理用）
-function deleteHistoryQuiet(id) {
-  return openDB().then(db => new Promise(res => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(id);
-    tx.oncomplete = () => res();
-    tx.onerror    = () => res();
-  }));
-}
-
-function showMoreHistory() {
-  histRenderCount += 30;
-  renderHistory();
-}
-
-const MODE_LABEL = { oracle:'🔮 占い', custom:'✍️ フリー', img2img:'🖼️ 画像参照' };
-const HISTORY_MAX = 200; // これを超えた古い履歴はIndexedDBから物理削除
-
-function renderHistory() {
-  loadHistory().then(history => {
-    const grid = document.getElementById('historyGrid');
-    if(!grid) return;
-    if(!history || history.length === 0) {
-      grid.innerHTML = '<div class="no-history" style="grid-column:1/-1">まだ履歴がありません<br><small>画像が生成されると保存されます</small></div>';
-      return;
-    }
-    // 200件超は古い順に物理削除するが、★お気に入りは対象外（削除しない）
-    const delable = history.filter(h => !h.fav);
-    if(delable.length > HISTORY_MAX) {
-      const excess = delable.slice(HISTORY_MAX);
-      console.info(`[LGO] 履歴(非★)が${HISTORY_MAX}件を超えたため、古い順に${excess.length}件を削除します`);
-      const ids = new Set(excess.map(h => h.id));
-      excess.forEach(h => deleteHistoryQuiet(h.id));
-      history = history.filter(h => !ids.has(h.id));
-      _histCache = history;
-    }
-    // ★のみ表示フィルタ
-    const view = _favOnly ? history.filter(h => h.fav) : history;
-    if(_favOnly && view.length === 0) {
-      grid.innerHTML = '<div class="no-history" style="grid-column:1/-1">★お気に入りはまだありません<br><small>履歴カードの☆を押すと登録できます</small></div>';
-      return;
-    }
-    let html = view.slice(0, histRenderCount).map(h => {
-      const label = h.date ? h.date.slice(5).replace('-','/') : '—';
-      const mode  = MODE_LABEL[h.mode] || '';
-      const id    = esc(h.id);
-      return `
-      <div class="hist-item" onclick="openModal('${id}')">
-        <img class="hist-img" src="${h.imageData||''}" loading="lazy" decoding="async" onerror="this.parentElement.style.opacity='.4'">
-        <div class="hist-overlay">
-          <div class="hist-date">${esc(label)} ${mode}</div>
-          <div class="hist-theme">${esc(h.rokuyo||'')} ${h.score ? esc(h.score)+'pt' : ''}</div>
-        </div>
-        <button class="hist-del" onclick="event.stopPropagation();deleteHistoryEntry('${id}')">×</button>
-        <button class="hist-fav${h.fav ? ' on' : ''}" onclick="event.stopPropagation();toggleFav('${id}',event)">${h.fav ? '★' : '☆'}</button>
-      </div>`;
-    }).join('');
-    // 未表示分がある場合のみ「もっと見る」を表示（初期30件・以降+30）
-    if(view.length > histRenderCount) {
-      html += `<button class="hist-more" onclick="showMoreHistory()">▽ もっと見る（残り${view.length - histRenderCount}件）</button>`;
-    }
-    grid.innerHTML = html;
-  }).catch(e => console.warn('renderHistory:', e));
-}
+// 履歴グリッドのクリックは1か所で受ける（カードごとのインライン onclick を廃止）
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('#historyGrid [data-act]');
+  if(!t) return;
+  const card = t.closest('.hist-item');
+  const id = card && card.dataset.id;
+  switch(t.dataset.act) {
+    case 'fav':  e.stopPropagation(); toggleFav(id); break;
+    case 'del':  e.stopPropagation(); deleteHistoryEntry(id); break;
+    case 'more': showMoreHistory(); break;
+    case 'open': openModal(id); break;
+  }
+});
 
 // ════════════════════════════════════════
 //  IMAGE GENERATION
@@ -1696,11 +1751,21 @@ function setPollinModel(m) {
   document.querySelectorAll('#pmodelRow .pmodel-btn').forEach(b => b.classList.toggle('active', b.dataset.m === m));
 }
 function savePollinKey() {
-  const k = (document.getElementById('pollinKeyInput').value || '').trim();
+  const input = document.getElementById('pollinKeyInput');
+  // 空白・改行の混入や、自動大文字化された先頭(Sk_/Pk_)を正規化
+  let k = (input.value || '').replace(/\s+/g, '');
+  k = k.replace(/^(sk|pk)_/i, m => m.toLowerCase());
+  if(k && !/^(sk|pk)_[A-Za-z0-9_-]{8,}$/.test(k)) {
+    showToast('⚠ キーの形式が正しくありません（sk_ または pk_ で始まる文字列）');
+    return;
+  }
+  input.value = k;
   try { if(k) localStorage.setItem('lg_pollinkey', k); else localStorage.removeItem('lg_pollinkey'); } catch(e){}
-  alert(k ? '✅ 高品質キーを保存しました（Nano Banana 2 等が利用可能に）' : '✅ キーを削除しました（無料モデルに戻ります）');
+  showToast(k ? '✅ 高品質キーを保存しました（Nano Banana 2 等が利用可能に）' : '✅ キーを削除しました（無料モデルに戻ります）');
 }
 const KEYED_SIZE = { fast:[1024,1536], balanced:[1280,1920], hq:[1536,2304] };
+const KEYED_TIMEOUT_MS = 75000;   // キー付き取得の待ち上限
+const HORDE_DELAY_MS   = { keyed: 80000, free: 18000 };  // Horde を保険として並走させるまでの猶予
 
 const ANIME_MODELS = ['Anything Diffusion','Anything v5','anything-v5'];
 const REAL_MODELS  = ['Realistic Vision','AbsoluteReality','Deliberate'];
@@ -1885,11 +1950,12 @@ function fetchKeyedImage(url, key, onDone, onErr, track) {
   try {
     const headers = {};
     if(key) headers['Authorization'] = 'Bearer ' + key;
-    // 欠陥2: 30秒でタイムアウト→onErr経由で既存フォールバックへ（無限待機を防止）
-    const _opt = { headers, cache: 'no-store' };
-    try { if(typeof AbortSignal !== 'undefined' && AbortSignal.timeout) _opt.signal = AbortSignal.timeout(30000); } catch(e){}
-    fetch(url, _opt)
+    // 高性能モデルは30秒を超えることが多い。打ち切ると flux で再生成＝二重課金になるため75秒待つ
+    const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const to = ac ? setTimeout(() => ac.abort(), KEYED_TIMEOUT_MS) : null;
+    fetch(url, { headers, cache: 'no-store', signal: ac ? ac.signal : undefined })
       .then(r => { if(!r.ok) throw new Error('http ' + r.status); return r.blob(); })
+      .finally(() => { if(to) clearTimeout(to); })
       .then(blob => {
         if(!blob || blob.size < 1000) throw new Error('empty blob');
         const obj = URL.createObjectURL(blob);
@@ -1906,6 +1972,7 @@ function fetchKeyedImage(url, key, onDone, onErr, track) {
 // 機能A: 🎲 バリエーション生成（当日シード+1001/+2002/+3003を並行生成→3枚から選ぶ）
 //  keyedはfetch並行・無鍵はImage並行・Hordeは使わない。選択後は残り2枚のobjURLを解放。
 let _varRunning = false;
+let _varRun = 0;        // バリエーション実行の世代番号（新規生成で打ち切るため）
 let _varItems = [];
 let _lastPromptData = null;
 let _lastSeed = 0; // その画像を生成した実シード（バリエーションの基準に使う＝生成ごとに変わる）
@@ -1977,6 +2044,7 @@ function generateVariations() {
   const base = _lastSeed || (currentDiv ? getDailySeed(currentDiv) : Math.floor(Math.random() * 1000000));
   const seeds = [base + 1001, base + 2002, base + 3003]; // 本命(base)と必ず異なる
   _varRunning = true;
+  const run = ++_varRun;
   _varItems = [undefined, undefined, undefined];
   const btn = document.getElementById('varBtn');
   if(btn) { btn.disabled = true; btn.textContent = '🎲 3枚生成中…'; }
@@ -1985,6 +2053,8 @@ function generateVariations() {
   let idx = 0;
   const setBtnProgress = () => { if(btn) btn.textContent = `🎲 生成中… ${Math.min(idx + 1, 3)}/3`; };
   const finishOne = (i, url, isObj) => {
+    // 途中で再生成・フリー生成などが始まった → 結果を捨てて連鎖を止める（Pollenの無駄遣い防止）
+    if(run !== _varRun) { if(url && isObj) { try { URL.revokeObjectURL(url); } catch(e){} } return; }
     _varItems[i] = url ? { url, isObj } : null;
     _renderVarStrip();
     runNext();
@@ -2002,6 +2072,7 @@ function generateVariations() {
       () => {
         // 失敗→別シードで1回だけリトライ（連続アクセスを避けるため少し待つ）
         setTimeout(() => {
+          if(run !== _varRun) return;
           _genOneVariation(seeds[i] + 4321, pd,
             (url, isObj) => finishOne(i, url, isObj),
             () => finishOne(i, null, false));
@@ -2015,6 +2086,7 @@ function _clearVariations() {
   try { _varItems.forEach(x => { if(x && x.isObj) { try { URL.revokeObjectURL(x.url); } catch(e){} } }); } catch(e){}
   _varItems = [];
   _varRunning = false;
+  _varRun++;              // 走行中のバリエーション連鎖を無効化
   const strip = document.getElementById('varStrip');
   if(strip) strip.innerHTML = '';
   const btn = document.getElementById('varBtn');
@@ -2038,7 +2110,8 @@ function selectVariation(i) {
   const strip = document.getElementById('varStrip');
   if(strip) strip.innerHTML = '';
   // 本命として表示＆履歴保存（共通のfinishWithImage経由・新しい世代トークンで）
-  finishWithImage(chosenUrl, 'バリエーション', _lastPromptData, ++GEN_TOKEN);
+  // keyedで得た1枚は品質バッジを「ネイティブ高解像度」として出す（旧版は常に無料扱いで誤表示）
+  finishWithImage(chosenUrl, it.isObj ? 'Pollinations-HD' : 'Pollinations', _lastPromptData, ++GEN_TOKEN);
 }
 
 // ── 完成画像をUIへ反映し、履歴保存・pending解除（共通処理）──
@@ -2073,7 +2146,7 @@ function sharpenCanvas(ctx, w, h, k) {
     ctx.putImageData(outD,0,0);
   } catch(e) {}
 }
-function upscaleToDataURL(imgEl, quality, asPng) {
+function upscaleCanvas(imgEl, quality) {
   const nw = imgEl.naturalWidth||0, nh = imgEl.naturalHeight||0;
   if(!nw || !nh) return null;
   const targetH = upscaleTargetH(quality);
@@ -2097,8 +2170,18 @@ function upscaleToDataURL(imgEl, quality, asPng) {
   // 鮮明化（アンシャープマスク）。高画質は強め・バランスは控えめ（0.6MP由来の甘さを補正）
   if(quality === 'hq') { sharpenCanvas(fctx, finalW, finalH, 0.72); }
   else if(quality === 'balanced') { sharpenCanvas(fctx, finalW, finalH, 0.42); }
-  // 無料flux由来はJPEG品質を上げて劣化を最小化（キー使用時はasPng=trueでPNG無圧縮）
-  return asPng ? src.toDataURL('image/png') : src.toDataURL('image/jpeg', 0.95);
+  return src;
+}
+function drawToCanvas(imgEl) {
+  const cv = document.createElement('canvas');
+  cv.width = imgEl.naturalWidth || 768; cv.height = imgEl.naturalHeight || 1152;
+  cv.getContext('2d').drawImage(imgEl, 0, 0);
+  return cv;
+}
+// toDataURL は同期処理でメイン画面を止め、base64 で約1.33倍に膨らむ。toBlob で非同期に書き出す。
+function canvasToBlob(cv, type, q) {
+  return new Promise((resolve, reject) =>
+    cv.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), type, q));
 }
 function makeThumb(imgEl) {
   try {
@@ -2110,6 +2193,12 @@ function makeThumb(imgEl) {
     ctx.drawImage(imgEl,0,0,w,h);
     return cv.toDataURL('image/jpeg', 0.82);
   } catch(e) { return null; }
+}
+
+// 走行中/失敗後に残ったHordeジョブを片付ける（新しい生成の開始時に呼ぶ）
+function resetHordeJob() {
+  if(hordeJobId) cancelHordeJob(hordeJobId);
+  hordeJobId = null;
 }
 
 // 勝者確定時に残存Hordeジョブをサーバー側キャンセル（kudos/キュー浪費防止・fire&forget）
@@ -2139,9 +2228,9 @@ function finishWithImage(src, winner, promptData, token) {
   const recovered = promptData && promptData._recovered ? promptData._recovered : null;
   _lastPromptData = promptData; // 機能A: バリエーション生成の元プロンプトとして保持
 
-  const show = (displayUrl, saveData, label) => {
-    currentImageUrl = displayUrl;
-    prepareSaveData(displayUrl); // ★ 保存用データをバックグラウンドで事前準備（iOS同期click対策）
+  const show = (displayUrl, thumb, label, blob) => {
+    setMainImageUrl(displayUrl);
+    prepareSaveData(blob || displayUrl); // 保存用データを事前準備（iOSの同期click制約対策）
     img.onload = () => {
       img.classList.add('loaded');
       if(loading) loading.classList.add('hidden');
@@ -2164,44 +2253,37 @@ function finishWithImage(src, winner, promptData, token) {
       }
     };
     img.src = displayUrl;
-    saveToHistory(promptData, saveData, recovered);
   };
 
   // 受信画像をオフスクリーンで読み込み → 必要なら高品質アップスケール
-  // キーが入っていれば（経路が keyed 成功でも無鍵フォールバックでも）必ず高解像度PNGで保存する
+  // キーが入っていれば（経路が keyed 成功でも無鍵フォールバックでも）高解像度PNGで保存する
   const keyed = !!getPollinKey() || !!(promptData && promptData.keyed) || winner === 'Pollinations-HD';
   const off = new Image(); off.crossOrigin = 'anonymous';
-  off.onload = () => {
-    let displayUrl = src, thumb = null;
+  off.onload = async () => {
+    let blob = null, thumb = null;
     try {
-      if(keyed) {
-        // キー使用時：必ず高解像度PNG。ネイティブが目標以上ならそのまま、未満ならPNGでアップスケール
-        const up = upscaleToDataURL(off, quality, true); // PNG出力
-        if(up) {
-          displayUrl = up;
-        } else {
-          const cv = document.createElement('canvas');
-          cv.width = off.naturalWidth || 1024; cv.height = off.naturalHeight || 1536;
-          cv.getContext('2d').drawImage(off, 0, 0);
-          displayUrl = cv.toDataURL('image/png');
-        }
-      } else {
-        const up = upscaleToDataURL(off, quality);
-        if(up) {
-          displayUrl = up;
-        } else {
-          const cv = document.createElement('canvas');
-          cv.width = off.naturalWidth || 768; cv.height = off.naturalHeight || 1152;
-          cv.getContext('2d').drawImage(off, 0, 0);
-          displayUrl = cv.toDataURL('image/jpeg', 0.92);
-        }
-      }
+      const up = upscaleCanvas(off, quality);
+      const cv = up || drawToCanvas(off);
+      blob  = await canvasToBlob(cv, keyed ? 'image/png' : 'image/jpeg', up ? 0.95 : 0.92);
       thumb = makeThumb(off);
-      _lastImgInfo = { quality, w: off.naturalWidth || 0, h: off.naturalHeight || 0, fmt: (displayUrl.indexOf('image/png') >= 0 ? 'PNG' : 'JPEG'), winner, model: (getPollinKey() ? getPollinModel() : '無料'), err: (winner !== 'Pollinations-HD' && _lastKeyedError) ? String((_lastKeyedError && _lastKeyedError.message) || _lastKeyedError) : '' };
-    } catch(e) { displayUrl = src; thumb = null; }
-    show(displayUrl, thumb || displayUrl, winner);
+      _lastImgInfo = { quality, w: off.naturalWidth || 0, h: off.naturalHeight || 0,
+        fmt: blob.type === 'image/png' ? 'PNG' : 'JPEG', winner,
+        model: (getPollinKey() ? getPollinModel() : '無料'),
+        err: (winner !== 'Pollinations-HD' && _lastKeyedError) ? String((_lastKeyedError && _lastKeyedError.message) || _lastKeyedError) : '' };
+    } catch(e) { blob = null; }
+    // 履歴にはフル解像度(Blob)とサムネを保存。サムネが作れない(CORS汚染)時は元URL。
+    const persist = thumb || (/^(data:|https?:)/.test(src) ? src : '');
+    if(persist) saveToHistory(promptData, persist, recovered, blob);
+    // エンコード中に別の生成が始まっていたら、表示は新しい方に譲る（保存だけ行う）
+    if(token !== GEN_TOKEN) return;
+    if(blob) show(URL.createObjectURL(blob), thumb, winner, blob);
+    else     show(src, thumb, winner, null);
   };
-  off.onerror = () => { show(src, src, winner); };
+  off.onerror = () => {
+    if(token !== GEN_TOKEN) return;
+    if(/^(data:|https?:)/.test(src)) saveToHistory(promptData, src, recovered, null);
+    show(src, null, winner, null);
+  };
   off.src = src;
 }
 
@@ -2229,14 +2311,17 @@ function pollHordeJob(jobId, promptData, onFail, token) {
             })
             .catch(() => onFail && onFail('Horde受信エラー'));
         } else if(status.faulted) {
-          stopAll(); clearPending(); onFail && onFail('Horde生成エラー');
+          stopAll(); clearPending(); hordeJobId = null; onFail && onFail('Horde生成エラー');
+        } else if(status.is_possible === false) {
+          // 対応ワーカーが1台もいない → 600秒待っても終わらないので即座に打ち切る
+          stopAll(); cancelHordeJob(jobId); hordeJobId = null; onFail && onFail('Horde: 対応ワーカーがいません');
         } else {
           const pos  = status.queue_position || 0;
           const wait = status.wait_time      || '?';
           if(hint) hint.textContent = pos > 0
             ? `✦ Horde キュー ${pos}番目 / 残り${wait}秒`
             : `✦ Horde 生成中… ${waitSecs}秒`;
-          if(waitSecs > 600) { stopAll(); onFail && onFail('Horde タイムアウト'); }
+          if(waitSecs > 600) { stopAll(); cancelHordeJob(jobId); hordeJobId = null; onFail && onFail('Horde タイムアウト'); }
         }
       })
       .catch(e => console.warn('Horde poll:', e));
@@ -2281,6 +2366,7 @@ function generateImage(promptData, seed) {
   const hint     = document.getElementById('loadingPromptHint');
 
   stopAll();
+  resetHordeJob();
   _clearVariations(); // 新規生成のたびに前回のバリエーション（サムネ・objURL）を破棄
   _lastSeed = seed;   // この画像の実シードを保持（バリエーションはこれを基準にするので毎回変わる）
   loading.classList.remove('hidden');
@@ -2377,10 +2463,12 @@ function generateImage(promptData, seed) {
     pollinImg.src = pollinUrl;
   }
 
-  // ② 18秒で未完了なら Horde も並行起動（保険）
+  // ② 一定時間で未完了なら Horde も並行起動（保険）
+  //    keyed は高性能モデルが30〜60秒かかるのが普通。18秒で低画質なHordeを並走させると
+  //    そちらが先着して高解像度の結果が捨てられるため、keyed はタイムアウト後まで待つ。
   pollinTimer = setTimeout(() => {
     if(!done && !hordeJobId) { hint.textContent = '✦ Horde も生成開始…'; submitHorde(promptData, onFail, genToken); }
-  }, 18000);
+  }, _pk ? HORDE_DELAY_MS.keyed : HORDE_DELAY_MS.free);
 }
 
 function getDailySeed(div) {
@@ -2481,83 +2569,94 @@ function resumePendingGeneration() {
 // ════════════════════════════════════════
 //  DOWNLOAD
 // ════════════════════════════════════════
-// 保存用データの事前準備（表示確定時に非同期で実行 → クリック時は同期で保存可能に）
-function prepareSaveData(url) {
-  if(currentObjUrl) { try { URL.revokeObjectURL(currentObjUrl); } catch(e){} }
-  currentFile = null; currentObjUrl = null;
-  if(!url) return;
-  const d = currentDiv ? currentDiv.now : new Date();
-  const ext  = url.startsWith('data:image/png') ? 'png' : 'jpg';
-  const type = ext === 'png' ? 'image/png' : 'image/jpeg';
-  const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.${ext}`;
+/* ────────────────────────────────────────────────────────────
+   保存・共有
+     iOS Safari は navigator.share / <a download> をタップ直後の同期処理でしか
+     許可しない。そこで表示確定時に File と ObjectURL を先に作っておく。
+     旧版は data URL を fetch して非同期で作っていたため、表示直後や
+     履歴から復元した画像では準備が間に合わず「準備中です」になったり、
+     共有が data URL の window.open（ブラウザが遮断）に落ちたりしていた。
+     Blob / data URL はいずれも同期で変換できるので、待ち時間ゼロにする。
+   ──────────────────────────────────────────────────────────── */
+let currentSave = null;   // { file, objUrl, name }
+
+function dataUrlToBlob(u) {
+  const i = u.indexOf(','), meta = u.slice(5, i), b64 = /;base64/.test(meta);
+  const type = meta.split(';')[0] || 'application/octet-stream';
+  const raw = b64 ? atob(u.slice(i + 1)) : decodeURIComponent(u.slice(i + 1));
+  const bytes = new Uint8Array(raw.length);
+  for(let k = 0; k < raw.length; k++) bytes[k] = raw.charCodeAt(k);
+  return new Blob([bytes], { type });
+}
+function saveFileName(date, type) {
+  const d = date || new Date();
+  return `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
+       + (type === 'image/png' ? '.png' : type === 'image/webp' ? '.webp' : '.jpg');
+}
+function makeSaveTarget(blob, date) {
+  const name = saveFileName(date, blob.type);
+  let file = null;
+  try { file = new File([blob], name, { type: blob.type || 'image/jpeg' }); } catch(e) {}
+  return { file, objUrl: URL.createObjectURL(blob), name };
+}
+function releaseSaveTarget(t) { if(t && t.objUrl) { try { URL.revokeObjectURL(t.objUrl); } catch(e){} } }
+
+// source: Blob | data URL | http(s) URL
+function prepareSaveData(source) {
+  releaseSaveTarget(currentSave);
+  currentSave = null;
+  if(!source) return;
+  const date = currentDiv ? currentDiv.now : new Date();
   try {
-    fetch(url)
-      .then(r => r.blob())
-      .then(blob => {
-        currentObjUrl = URL.createObjectURL(blob);
-        try { currentFile = new File([blob], fname, { type: blob.type || type }); } catch(e) { currentFile = null; }
-      })
-      .catch(() => {});
-  } catch(e) {}
+    if(source instanceof Blob)            { currentSave = makeSaveTarget(source, date); return; }
+    if(String(source).startsWith('data:')) { currentSave = makeSaveTarget(dataUrlToBlob(source), date); return; }
+  } catch(e) { console.warn('[LGO] 保存データの準備に失敗:', e); }
+  const want = source;
+  fetch(source).then(r => r.blob()).then(b => {
+    if(currentImageUrl === want || !currentSave) { releaseSaveTarget(currentSave); currentSave = makeSaveTarget(b, date); }
+  }).catch(() => {});
+}
+
+// 共有シート（iPhoneは「画像を保存」で写真へ）→ <a download> → 新規タブ の順に試す
+function deliverImage(target, text) {
+  if(!target) { showToast('準備中です。1〜2秒後にもう一度お試しください'); return; }
+  if(target.file && navigator.canShare && navigator.canShare({ files: [target.file] })) {
+    navigator.share(text ? { files: [target.file], text } : { files: [target.file] }).catch(() => {});
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = target.objUrl; a.download = target.name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { try { a.remove(); } catch(e){} }, 150);
 }
 
 function showToast(msg) {
   try {
     const t = document.createElement('div');
+    t.className = 'toast';
+    t.setAttribute('role', 'status');
     t.textContent = msg;
-    t.style.cssText = 'position:fixed;left:50%;bottom:32px;transform:translateX(-50%);max-width:88%;text-align:center;background:rgba(20,17,40,.96);color:#f0eaff;border:1px solid rgba(167,139,250,.4);border-radius:12px;padding:10px 18px;font-size:.78rem;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,.5)';
     document.body.appendChild(t);
-    setTimeout(() => { t.style.transition = 'opacity .4s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 2200);
+    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 2200);
   } catch(e) {}
 }
 
 function shareImage() {
-  // 機能C: 共有ボタン。既存の同期3段方式（share→a[download]→window.open）を流用し、text付きで共有
-  if(!currentFile && !currentObjUrl && !currentImageUrl) return;
   const d = currentDiv ? currentDiv.now : new Date();
-  const dateStr = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`;
   const roku = (currentDiv && currentDiv.rokuyo) ? (' ' + currentDiv.rokuyo) : '';
-  const text = `今日のラッキーガール ✦ ${dateStr}${roku}`;
-  const ext = (currentImageUrl && currentImageUrl.startsWith('data:image/png')) ? 'png' : 'jpg';
-  const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.${ext}`;
-  if(currentFile && navigator.canShare && navigator.canShare({ files: [currentFile] })) {
-    navigator.share({ files: [currentFile], text }).catch(() => {});
-    return;
-  }
-  if(currentObjUrl) {
-    const a = document.createElement('a'); a.href = currentObjUrl; a.download = fname;
-    document.body.appendChild(a); a.click(); setTimeout(() => { try { document.body.removeChild(a); } catch(e){} }, 150);
-    return;
-  }
-  if(currentImageUrl) { try { window.open(currentImageUrl, '_blank'); } catch(e){} }
+  deliverImage(currentSave, `今日のラッキーガール ✦ ${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}${roku}`);
 }
 
 function downloadImage() {
-  if(!currentImageUrl && !currentObjUrl) return;
-  const d = currentDiv ? currentDiv.now : new Date();
-  const ext = (currentImageUrl && currentImageUrl.startsWith('data:image/png')) ? 'png' : 'jpg';
-  const fname = `lucky-girl-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.${ext}`;
+  deliverImage(currentSave);
+}
 
-  // ① 事前準備済みFileがあり共有可能 → 共有シート（iPhoneで「画像を保存」可能・最良UX）
-  if(currentFile && navigator.canShare && navigator.canShare({ files: [currentFile] })) {
-    navigator.share({ files: [currentFile] }).catch(() => {});
-    return;
-  }
-  // ② 事前準備済みObjectURL → 同期click（非同期を挟まない）
-  if(currentObjUrl) {
-    const a = document.createElement('a');
-    a.download = fname; a.href = currentObjUrl; a.click();
-    return;
-  }
-  // ③ data: URLならそのまま同期click
-  if(currentImageUrl && currentImageUrl.startsWith('data:')) {
-    const a = document.createElement('a');
-    a.download = fname; a.href = currentImageUrl; a.click();
-    return;
-  }
-  // ④ 準備未完了 → フォールバック＋案内
-  if(currentImageUrl) window.open(currentImageUrl, '_blank');
-  showToast('準備中です。1〜2秒後にもう一度お試しください');
+// メイン画像の表示URLを差し替える（前回の ObjectURL は解放してメモリ蓄積を防ぐ）
+let _mainObjUrl = null;
+function setMainImageUrl(url) {
+  if(_mainObjUrl && _mainObjUrl !== url) { try { URL.revokeObjectURL(_mainObjUrl); } catch(e){} }
+  _mainObjUrl = (url && url.startsWith('blob:')) ? url : null;
+  currentImageUrl = url;
 }
 
 // ════════════════════════════════════════
@@ -2585,9 +2684,11 @@ function switchTab(tab) {
 function updateFreeCount(){
   var t=document.getElementById('freePrompt'), c=document.getElementById('freeCount');
   if(!t||!c) return;
+  // 送信時は品質接頭辞が前に付くので、入力に使えるのはその残り
+  var max = PROMPT_MAX - (QUALITY_PREFIX[freeStyle] || '').length - 1;
   var n=(t.value||'').length;
-  c.textContent=n+'/'+PROMPT_MAX+'文字'+(n>PROMPT_MAX?'（超過分は送信時に末尾から調整されます）':'');
-  c.style.color=(n>PROMPT_MAX)?'#ff6b6b':'#8a8496';
+  c.textContent=n+'/'+max+'文字'+(n>max?'（超過分は送信時に末尾から調整されます）':'');
+  c.style.color=(n>max)?'#ff6b6b':'#8a8496';
 }
 (function(){
   function bind(){
@@ -2600,7 +2701,7 @@ function updateFreeCount(){
 
 function generateFree() {
   const userPrompt = (document.getElementById('freePrompt')?.value || '').trim();
-  if(!userPrompt) { alert('プロンプトを入力してください'); return; }
+  if(!userPrompt) { showToast('プロンプトを入力してください'); return; }
   const userNeg = (document.getElementById('freeNeg')?.value || '').trim()
     || 'nude, nsfw, bad anatomy, ugly, deformed, blurry, watermark, revealing';
 
@@ -2676,7 +2777,7 @@ function onImageUpload(e) {
 }
 
 function generateImg2Img() {
-  if(!uploadedImageBase64) { alert('まず画像を選択してください'); return; }
+  if(!uploadedImageBase64) { showToast('まず画像を選択してください'); return; }
   const addPrompt = (document.getElementById('i2iPrompt')?.value || '').trim();
   const strength  = parseFloat(document.getElementById('strengthSlider')?.value || '0.6');
 
@@ -2706,6 +2807,7 @@ function generateImg2ImgWithHorde(promptData, strength, sourceBase64) {
   const hint     = document.getElementById('loadingPromptHint');
 
   stopAll();
+  resetHordeJob();
   _clearVariations(); // img2imgの新規生成でも前回のバリエーションを破棄
   _lastSeed = Math.floor(Math.random() * 999999); // 画像参照でもバリエーションが毎回変わるように
   loading.classList.remove('hidden');
@@ -2780,38 +2882,49 @@ function saveHordeKey() {
     else localStorage.removeItem('lg_hordekey');
   } catch(e){}
   document.getElementById('settingsPanel').classList.remove('open');
-  alert(key ? '✅ APIキーを保存しました' : '✅ 匿名キーに戻しました');
+  showToast(key ? '✅ APIキーを保存しました' : '✅ 匿名キーに戻しました');
 }
 
 // ════════════════════════════════════════
 //  MODAL
 // ════════════════════════════════════════
+let _modalSave = null;
 function openModal(id) {
-  openDB().then(db => {
-    const tx  = db.transaction(STORE_NAME, 'readonly');
-    const req = tx.objectStore(STORE_NAME).get(id);
-    req.onsuccess = e => {
-      const h = e.target.result;
-      if(!h) return;
-      document.getElementById('modalImg').src   = h.imageData || '';
-      document.getElementById('modalDate').textContent  = `${h.date||''} ${h.rokuyo||''} ${MODE_LABEL[h.mode]||''}`;
-      document.getElementById('modalTheme').textContent = h.theme || h.prompt || '';
-      document.getElementById('histModal').classList.add('open');
-    };
-  });
+  const h = histFind(id);
+  if(!h) return;
+  releaseSaveTarget(_modalSave);
+  const date = h.date ? new Date(h.date + 'T12:00:00') : new Date();
+  let src = h.imageData || '';
+  try {
+    _modalSave = h.full ? makeSaveTarget(h.full, date)
+               : (src.startsWith('data:') ? makeSaveTarget(dataUrlToBlob(src), date) : null);
+    if(h.full) src = _modalSave.objUrl;          // フル解像度があればそれを表示
+  } catch(e) { _modalSave = null; }
+  document.getElementById('modalImg').src = src;
+  document.getElementById('modalDate').textContent  = `${h.date||''} ${h.rokuyo||''} ${MODE_LABEL[h.mode]||''}`;
+  document.getElementById('modalTheme').textContent = h.theme || h.prompt || '';
+  const sb = document.getElementById('modalSaveBtn');
+  if(sb) { sb.disabled = !_modalSave; sb.textContent = h.full ? '↓ 保存（フル解像度）' : '↓ 保存'; }
+  document.getElementById('histModal').classList.add('open');
 }
 
+function saveModalImage() { deliverImage(_modalSave); }
+
 function closeModal(e) {
-  if(!e || e.target === document.getElementById('histModal'))
-    document.getElementById('histModal').classList.remove('open');
+  if(e && e.target !== document.getElementById('histModal')) return;
+  document.getElementById('histModal').classList.remove('open');
+  document.getElementById('modalImg').removeAttribute('src');
+  releaseSaveTarget(_modalSave); _modalSave = null;
 }
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && document.getElementById('histModal').classList.contains('open')) closeModal();
+});
 
 // ════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════
 /* 鑑定結果を計算してUIへ反映する。プロンプト欄も同時に更新する。
-   実測暦(calendar.json)の到着後にもう一度呼ぶことで、内蔵計算の「※概算」表示が
-   実測値に差し替わる。 */
+   起動時と、日付が変わった状態でアプリへ戻ってきた時に呼ぶ。 */
 function refreshDivination() {
   try {
     currentDiv = computeToday();
@@ -2832,10 +2945,8 @@ async function init() {
   setImgQuality(getImgQuality());
   setPollinModel(getPollinModel());
 
-  // ── 初期描画をブロックしない ──────────────────────────────
-  // 旧版は calendar.json の取得(最大6秒)を await してから描画していたため、
-  // 初回起動時に画面が「—」のまま数秒固まっていた。
-  // まず内蔵計算で即描画し、実測暦が届いたら静かに差し替える。
+  // 暦は端末内の天文計算で完結するため、通信を待たずに即描画できる
+  try { localStorage.removeItem('lgo_cal_v1'); } catch(e){}   // 旧・外部暦キャッシュの掃除
   if(!refreshDivination()) {
     // 鑑定計算そのものが失敗しても、生成UIだけは操作可能にしておく
     showReadyToGenerate();
@@ -2843,7 +2954,6 @@ async function init() {
   }
   renderHistory();
 
-  loadCalendarLG().then(cal => { if(cal) refreshDivination(); });
 
   const d = currentDiv.now;
   const todayKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -2864,7 +2974,21 @@ async function init() {
     const loading  = document.getElementById('loadingOverlay');
     const hint     = document.getElementById('loadingPromptHint');
     const regenBtn = document.getElementById('regenBtn');
-    currentImageUrl = todayEntry.imageData;
+    // フル解像度が残っていればそれを表示・保存対象にする（無ければサムネ）
+    //   旧版はここで保存データを準備しておらず、共有が data URL の window.open
+    //  （ブラウザが遮断）に落ちていた。またバリエーションの元プロンプトが無く、
+    //   ボタンが押せるのに何も起きなかった。
+    const full = todayEntry.full instanceof Blob ? todayEntry.full : null;
+    const url  = full ? URL.createObjectURL(full) : todayEntry.imageData;
+    setMainImageUrl(url);
+    prepareSaveData(full || todayEntry.imageData);
+    _lastPromptData = {
+      prompt: todayEntry.prompt || currentPromptData.prompt,
+      negative: todayEntry.negative || currentPromptData.negative,
+      style: todayEntry.style || currentStyle, mode: 'oracle',
+      theme: todayEntry.theme, elemLabel: currentPromptData.elemLabel,
+    };
+    _lastSeed = getDailySeed(currentDiv) + Math.floor(Math.random() * 9999);
     img.onload = () => {
       img.classList.add('loaded');
       loading.classList.add('hidden');
@@ -2873,7 +2997,7 @@ async function init() {
       if(hint) hint.textContent = '✦ 本日の一枚（生成済み）';
     };
     img.onerror = showReadyToGenerate;
-    img.src = todayEntry.imageData;
+    img.src = url;
   } catch(e) {
     showReadyToGenerate();
   }
@@ -2904,8 +3028,25 @@ function showReadyToGenerate() {
 window.onerror = (msg) => { if(typeof msg==='string' && msg.includes('Script error')) return true; };
 window.onunhandledrejection = e => console.warn('Unhandled:', e.reason);
 
-// ── バックグラウンド復帰／再表示時に、未完了ジョブを自動回収 ──
+// ── 日付の切り替わり検知 ──
+//   iPhoneのホーム画面アプリはメモリに残り続けるため、前日に開いたまま翌日戻ると
+//   旧版は前日の六曜・運気・画像のまま「再生成」すると前日の鑑定で生成していた。
+const dayKeyOf = d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+function checkDayRollover() {
+  if(!currentDiv || isGenerating || dayKeyOf(new Date()) === dayKeyOf(currentDiv.now)) return false;
+  refreshDivination();
+  const img = document.getElementById('mainImg');
+  img.classList.remove('loaded'); img.removeAttribute('src');
+  setMainImageUrl(null); prepareSaveData(null);
+  _clearVariations(); _lastPromptData = null; _lastImgInfo = null; _renderQualityBadge();
+  showReadyToGenerate();
+  return true;
+}
+setInterval(() => { if(document.visibilityState === 'visible') checkDayRollover(); }, 60000);
+
+// ── バックグラウンド復帰／再表示時に、日付更新と未完了ジョブの自動回収 ──
 function tryResumeOnReturn() {
+  checkDayRollover();
   if(!isGenerating && loadPending()) resumePendingGeneration();
 }
 document.addEventListener('visibilitychange', () => {

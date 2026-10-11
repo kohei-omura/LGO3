@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>✨ Lucky Girl Oracle v16</title>
+<title>✨ Lucky Girl Oracle v17</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0d0b1a">
 <meta name="description" content="毎日の占い(15占術統合)から、その日の運気の女の子をAI生成するデイリー占いアプリ。">
@@ -36,6 +36,8 @@
 <!-- 生成API/フォントへ先行接続してTTFBを短縮 -->
 <link rel="preconnect" href="https://image.pollinations.ai" crossorigin>
 <link rel="preconnect" href="https://gen.pollinations.ai" crossorigin>
+<link rel="preconnect" href="https://black-forest-labs-flux-1-schnell.hf.space" crossorigin>
+<link rel="preconnect" href="https://black-forest-labs-flux-1-dev.hf.space" crossorigin>
 <link rel="dns-prefetch" href="https://stablehorde.net">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -363,12 +365,26 @@
     <label class="settings-label">✦ 画質モード（速度↔画質）</label>
     <div class="quality-row" id="qualityRow">
       <button class="quality-btn" data-q="fast" onclick="setImgQuality('fast')">⚡高速<small>等倍・最速</small></button>
-      <button class="quality-btn" data-q="balanced" onclick="setImgQuality('balanced')">⚖バランス<small>約1536pxへ高品質化</small></button>
-      <button class="quality-btn" data-q="hq" onclick="setImgQuality('hq')">💎高画質<small>約2304px+鮮明化</small></button>
+      <button class="quality-btn" data-q="balanced" onclick="setImgQuality('balanced')">⚖バランス<small>FLUX 1024×1536</small></button>
+      <button class="quality-btn" data-q="hq" onclick="setImgQuality('hq')">💎高画質<small>FLUX dev＋AI超解像 3072px</small></button>
     </div>
     <div class="settings-hint" style="margin-bottom:14px">
-      無料のPollinationsは元画像が約0.6MP(≈627×940)に制限されるため、バランス/高画質では<strong style="color:var(--gold)">受信後に高品質アップスケール</strong>して大きく保存します（高画質は鮮明化も実施）。ネイティブの高解像度が必要な場合は下のStable Horde APIキーを設定してください（Hordeは指定解像度で生成します）。切替後は「再生成」で反映されます。
+      ⚡高速＝FLUX schnell 768×1152／⚖バランス＝FLUX schnell 1024×1536／💎高画質＝FLUX dev(28step) 1024×1536 を<strong style="color:var(--gold)">端末内AI超解像で 2048×3072</strong> に精細化。切替後は「再生成」で反映されます。
     </div>
+
+    <label class="settings-label" style="margin-top:4px">✦ 無料で最高画質（クレジット不要）</label>
+    <button id="hfModeBtn" class="quality-btn" onclick="setHfEnabled(!getHfEnabled())" style="width:100%;margin-bottom:6px">🤗 無料FLUX（Hugging Face）：ON</button>
+    <button id="aiSrBtn" class="quality-btn" onclick="setAiSrEnabled(!getAiSrEnabled())" style="width:100%;margin-bottom:6px">🧠 AI超解像（端末内）：ON</button>
+    <div class="settings-hint" style="margin-bottom:8px">
+      🤗 <strong style="color:var(--gold)">FLUX.1</strong>（最新世代の高精細モデル）を Hugging Face の無料GPUで生成します。APIキー・クレジットは不要です。1日の無料GPU枠を使い切ると、自動で Pollinations／Horde に切り替わります（時間をおくと回復します）。<br>
+      🧠 生成後の画像を、この端末のGPUで <strong style="color:var(--gold)">Real-CUGAN／Real-ESRGAN</strong> によりAI超解像し、線・瞳・髪の細部を復元します。通信・クレジットは不要です（初回だけモデル約2〜3MBを読み込みます）。
+    </div>
+    <input class="settings-input" id="hfTokenInput" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="hf_... （任意：Hugging Face の無料トークン）" value="">
+    <div class="settings-hint" style="margin-bottom:6px">
+      📌 任意です。<a href="https://huggingface.co/join" target="_blank" rel="noopener">huggingface.co</a> に無料登録 →「Settings」→「Access Tokens」で <strong>Read</strong> トークンを作って入れると、無料GPU枠が未ログインより増えます（料金はかかりません）。
+    </div>
+    <button class="settings-save-btn" onclick="saveHfToken()" style="margin-bottom:18px">💾 HFトークンを保存</button>
+
     <label class="settings-label" style="margin-top:4px">✦ 最高品質モード（Pollinations APIキー）</label>
     <div class="quality-row" id="pmodelRow">
       <button class="quality-btn pmodel-btn" data-m="nanobanana-2" onclick="setPollinModel('nanobanana-2')">🍌 Nano Banana 2<small>Gemini 3.1 / 最高</small></button>
@@ -399,7 +415,7 @@
     <input class="settings-input" id="hordeKeyInput" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" enterkeyhint="done" placeholder="例: abc123xyz... （未入力=匿名キー）" value="">
     <div class="settings-hint">
       📌 <a href="https://stablehorde.net/register" target="_blank">stablehorde.net</a> で無料登録 → APIキーを取得 → ここに入力すると生成が<strong style="color:var(--green)">5〜30秒</strong>に高速化されます。<br>
-      ※ 画像生成には先にPollinations.ai（3〜15秒）を試みます。
+      ※ Horde は無料FLUX・Pollinations がどちらも使えない時の最終手段です。
     </div>
     <button class="settings-save-btn" onclick="saveHordeKey()">💾 保存</button>
   </div>
@@ -1534,11 +1550,17 @@ function saveToHistory(promptData, imageData, extraInfo, fullBlob) {
     ...(extraInfo || {}),
   };
   if(fullBlob) record.full = fullBlob;
+  _pendingFull[record.id] = null;
   openDB().then(db => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
     // add だと同一ミリ秒のID衝突で例外になり履歴が欠けるため put を使う
     tx.objectStore(STORE_NAME).put(record);
-    tx.oncomplete = () => { histCacheUnshift(record); renderHistory(); pruneHistory(); };
+    tx.oncomplete = () => {
+      histCacheUnshift(record); renderHistory(); pruneHistory();
+      // 保存中に AI 超解像が先に終わっていたら、ここで差し替える
+      if(_pendingFull[record.id]) updateHistoryFull(record.id, _pendingFull[record.id]);
+      delete _pendingFull[record.id];
+    };
     // 容量不足などでフル解像度ごと入らない時は、サムネだけでも残す
     // （中断時は onerror と onabort の両方が来るため、1回だけ再試行する）
     let retried = false;
@@ -1547,6 +1569,18 @@ function saveToHistory(promptData, imageData, extraInfo, fullBlob) {
       retried = true; delete record.full; saveToHistoryRecord(record);
     };
   }).catch(e => console.warn('DB save error:', e));
+  return record.id;
+}
+// AI 超解像の結果でフル解像度を差し替える（保存トランザクション完了前なら予約）
+const _pendingFull = {};
+function updateHistoryFull(id, blob) {
+  const rec = histFind(id);
+  if(!rec) { if(id in _pendingFull) _pendingFull[id] = blob; return; }
+  rec.full = blob;
+  openDB().then(db => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(rec);
+  }).catch(() => {});
 }
 function saveToHistoryRecord(record) {
   openDB().then(db => {
@@ -1765,17 +1799,25 @@ function savePollinKey() {
 }
 const KEYED_SIZE = { fast:[1024,1536], balanced:[1280,1920], hq:[1536,2304] };
 const KEYED_TIMEOUT_MS = 75000;   // キー付き取得の待ち上限
-const HORDE_DELAY_MS   = { keyed: 80000, free: 18000 };  // Horde を保険として並走させるまでの猶予
+const HORDE_DELAY_MS   = { keyed: 80000, hf: 170000, free: 18000 };  // Horde を保険として並走させるまでの猶予
 
+// SD1.5（旧世代・512px級）… SDXL に対応ワーカーが無い時の予備
 const ANIME_MODELS = ['Anything Diffusion','Anything v5','anything-v5'];
 const REAL_MODELS  = ['Realistic Vision','AbsoluteReality','Deliberate'];
+// SDXL … 832×1216(約1MP)は匿名でも kudos 不要の上限内。SD1.5 より細部と構図が段違い
+const ANIME_MODELS_XL = ['AlbedoBase XL (SDXL)', 'AAM XL', 'Animagine XL'];
+const REAL_MODELS_XL  = ['AlbedoBase XL (SDXL)', 'Juggernaut XL', 'SDXL 1.0'];
 
 let hordeJobId   = null;
 let pollInterval = null;
 let pollinTimer  = null;
 let secTimer     = null;
 
+let _genAbort = null;   // 走行中の HF(FLUX) 生成
+let _srAbort  = null;   // 走行中の AI 超解像
 function stopAll() {
+  if(_genAbort) { _genAbort.abort(); _genAbort = null; }
+  if(_srAbort)  { _srAbort.abort();  _srAbort  = null; }
   if(pollInterval){ clearInterval(pollInterval); pollInterval = null; }
   if(pollinTimer) { clearTimeout(pollinTimer);   pollinTimer  = null; }
   if(secTimer)    { clearInterval(secTimer);      secTimer     = null; }
@@ -1942,6 +1984,285 @@ function buildPollinationsUrl(promptData, seed) {
   return buildPollinUrl(promptData, seed, getPollinKey() ? 'keyed' : 'free');
 }
 
+/* ════════════════════════════════════════════════════════════
+   無料の高画質生成: Hugging Face Spaces の FLUX.1（ZeroGPU・クレジット不要）
+     Pollinations / Horde は無料枠では約0.6MP・旧世代モデルに制限されるため、
+     公式の FLUX.1 Space を Gradio API で直接呼び、1024×1536 をネイティブ生成する。
+     未ログインでも1日の無料GPU枠で動く。無料アカウントのトークン(hf_)を入れると枠が増える。
+     プロトコル: POST {root}/gradio_api/call/{api} → event_id
+                GET  {root}/gradio_api/call/{api}/{event_id} (SSE: generating/complete/error)
+   ════════════════════════════════════════════════════════════ */
+const HF_SPACES = {
+  schnell: { label:'FLUX.1 schnell', root:'https://black-forest-labs-flux-1-schnell.hf.space', api:'infer',
+             // infer(prompt, seed, randomize_seed, width, height, num_inference_steps)
+             data:(p, seed, w, h) => [p, seed, false, w, h, 4] },
+  dev:     { label:'FLUX.1 dev', root:'https://black-forest-labs-flux-1-dev.hf.space', api:'infer',
+             // infer(prompt, seed, randomize_seed, width, height, guidance_scale, num_inference_steps)
+             data:(p, seed, w, h) => [p, seed, false, w, h, 3.5, 28] },
+};
+// 画質モードごとの試行順と生成サイズ（FLUXは32の倍数）
+const HF_PLAN = {
+  fast:     { chain:['schnell'],        w:768,  h:1152 },
+  balanced: { chain:['schnell', 'dev'], w:1024, h:1536 },
+  hq:       { chain:['dev', 'schnell'], w:1024, h:1536 },
+};
+const HF_TIMEOUT_MS = 160000;   // 全候補合計の上限（GPU待ち行列 + dev 28step を見込む）
+
+function getHfEnabled() { try { return localStorage.getItem('lg_hf') !== '0'; } catch(e) { return true; } }
+function setHfEnabled(on) {
+  try { localStorage.setItem('lg_hf', on ? '1' : '0'); } catch(e){}
+  const b = document.getElementById('hfModeBtn');
+  if(b) { b.classList.toggle('active', on); b.textContent = on ? '🤗 無料FLUX（Hugging Face）：ON' : '🤗 無料FLUX（Hugging Face）：OFF'; }
+}
+function getHfToken() { try { return (localStorage.getItem('lg_hftoken') || '').trim(); } catch(e) { return ''; } }
+function saveHfToken() {
+  const input = document.getElementById('hfTokenInput');
+  const k = (input.value || '').replace(/\s+/g, '').replace(/^hf_/i, 'hf_');
+  if(k && !/^hf_[A-Za-z0-9]{20,}$/.test(k)) { showToast('⚠ トークンの形式が正しくありません（hf_ で始まる文字列）'); return; }
+  input.value = k;
+  try { if(k) localStorage.setItem('lg_hftoken', k); else localStorage.removeItem('lg_hftoken'); } catch(e){}
+  ['schnell','dev'].forEach(key => { try { localStorage.removeItem('lg_hf_cool_' + key); } catch(e){} });
+  showToast(k ? '✅ HFトークンを保存しました（無料GPU枠が増えます）' : '✅ トークンを削除しました（未ログイン枠で動作）');
+}
+// 無料GPU枠を使い切った Space は回復まで呼ばない（毎回待たされるのを防ぐ）
+function hfCooldownLeft(key) {
+  try { return Math.max(0, (+localStorage.getItem('lg_hf_cool_' + key) || 0) - Date.now()); } catch(e) { return 0; }
+}
+function setHfCooldown(key, ms) { try { localStorage.setItem('lg_hf_cool_' + key, String(Date.now() + ms)); } catch(e){} }
+function hfQuotaWait(msg) {
+  // 例: "You have exceeded your GPU quota (60s requested vs. 12s left). Try again in 1:23:45"
+  if(!/quota|exceeded|rate.?limit|too many/i.test(msg)) return 0;
+  const m = /(\d+):(\d{2}):(\d{2})/.exec(msg);
+  return m ? ((+m[1]) * 3600 + (+m[2]) * 60 + (+m[3])) * 1000 : 60 * 60 * 1000;
+}
+
+async function hfCall(space, data, opt) {
+  const tok = getHfToken();
+  const auth = tok ? { Authorization: 'Bearer ' + tok } : {};
+  let base = null, eventId = null;
+  for(const prefix of ['/gradio_api', '']) {            // Gradio 5 / Gradio 4 の両方に対応
+    const r = await fetch(`${space.root}${prefix}/call/${space.api}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ data }), signal: opt.signal,
+    });
+    if(r.status === 404) continue;
+    if(!r.ok) throw new Error(`HF ${r.status}`);
+    eventId = (await r.json()).event_id; base = space.root + prefix; break;
+  }
+  if(!eventId) throw new Error('HF: Space が見つかりません');
+  const res = await fetch(`${base}/call/${space.api}/${eventId}`, { headers: auth, signal: opt.signal });
+  if(!res.ok || !res.body) throw new Error('HF stream ' + res.status);
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = '', ev = '';
+  for(;;) {
+    const { value, done } = await reader.read();
+    if(done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).replace(/\r$/, ''); buf = buf.slice(i + 1);
+      if(line.startsWith('event:')) { ev = line.slice(6).trim(); continue; }
+      if(!line.startsWith('data:')) continue;
+      const raw = line.slice(5).trim();
+      if(ev === 'complete') { reader.cancel().catch(() => {}); return { base, out: JSON.parse(raw) }; }
+      if(ev === 'error') {
+        let m = raw; try { m = JSON.parse(raw); } catch(e){}
+        throw new Error(typeof m === 'string' && m ? m : (m && m.message) || 'HF: 生成エラー');
+      }
+      if(opt.onStatus) opt.onStatus(ev);
+    }
+  }
+  throw new Error('HF: 結果が返りませんでした');
+}
+function hfFileUrl(base, f) {
+  if(!f) return null;
+  if(typeof f === 'string') return /^https?:/.test(f) ? f : `${base}/file=${f}`;
+  return f.url || (f.path ? `${base}/file=${f.path}` : null);
+}
+
+// FLUX は T5 で文章を理解するモデル。SD 向けの品質タグ(masterpiece/8k/1girl…)は効かないうえ
+// 語数を圧迫するので外し、画風と精細さを文章で指示する。
+const SD_ONLY_TAGS = new Set(['masterpiece','best quality','ultra detailed','highly detailed','8k','8k uhd','4k','raw photo',
+  'safe','sfw','anime illustration','photorealistic','sharp focus','crisp details','professional lighting','fully clothed',
+  'cinematic lighting','bokeh','vibrant colors','dynamic composition','depth of field','natural skin texture']);
+function buildFluxPrompt(pd) {
+  const anime = pd.style !== 'real';
+  const body = String(pd.prompt || '').split(',').map(t => t.trim()).filter(Boolean)
+    .filter(t => !SD_ONLY_TAGS.has(t.toLowerCase()))
+    .map(t => t.toLowerCase() === '1girl' ? (anime ? 'a beautiful young anime girl' : 'a beautiful young Japanese woman') : t)
+    .join(', ');
+  const lead = anime
+    ? 'A breathtaking, highly detailed anime illustration in a refined modern Japanese anime style, delicate clean linework, intricate fine details, luminous expressive eyes, soft cinematic lighting, gentle bokeh.'
+    : 'A breathtaking photorealistic portrait photograph, natural skin texture, fine individual hair strands, shot on an 85mm lens at f/1.8, soft cinematic lighting, ultra sharp focus.';
+  return `${lead} ${body}. Fully clothed, elegant and tasteful.`.slice(0, 1200);
+}
+
+// 画質モードに応じて FLUX を順に試す。成功時 { blob, label }。
+async function hfGenerate(pd, seed, quality, opt) {
+  const plan = HF_PLAN[quality] || HF_PLAN.balanced;
+  const prompt = buildFluxPrompt(pd);
+  let lastErr = new Error('HF: 無料GPU枠の回復待ちです');
+  const deadline = Date.now() + HF_TIMEOUT_MS;
+  for(const key of plan.chain) {
+    if(hfCooldownLeft(key)) continue;
+    const left = deadline - Date.now();
+    if(left < 15000) break;                          // 次の候補を試す時間が残っていない
+    const sp = HF_SPACES[key];
+    const ac = new AbortController();
+    const relay = () => ac.abort();
+    if(opt.signal) { if(opt.signal.aborted) throw new Error('aborted'); opt.signal.addEventListener('abort', relay); }
+    const to = setTimeout(() => ac.abort(), left);
+    try {
+      if(opt.onStatus) opt.onStatus(sp.label, 'queue');
+      const { base, out } = await hfCall(sp, sp.data(prompt, seed % 2147483647, plan.w, plan.h),
+        { signal: ac.signal, onStatus: ev => opt.onStatus && opt.onStatus(sp.label, ev) });
+      const url = hfFileUrl(base, Array.isArray(out) ? out[0] : out);
+      if(!url) throw new Error('HF: 画像URLがありません');
+      const r = await fetch(url, { signal: ac.signal });
+      if(!r.ok) throw new Error('HF file ' + r.status);
+      const blob = await r.blob();
+      if(blob.size < 1000) throw new Error('HF: 空の画像');
+      return { blob, label: sp.label };
+    } catch(e) {
+      lastErr = e;
+      if(opt.signal && opt.signal.aborted) throw e;
+      const wait = hfQuotaWait(String(e && e.message || e));
+      if(wait) setHfCooldown(key, wait);            // 枠切れのSpaceはしばらく飛ばす（次の候補は試す）
+      console.warn('[LGO] HF ' + sp.label + ' 失敗:', e && e.message);
+    } finally {
+      clearTimeout(to);
+      if(opt.signal) opt.signal.removeEventListener('abort', relay);
+    }
+  }
+  throw lastErr;
+}
+
+/* ════════════════════════════════════════════════════════════
+   端末内 AI 超解像（Real-CUGAN / Real-ESRGAN・TensorFlow.js）
+     通信もクレジットも不要。WebGPU → WebGL の順に GPU で推論する。
+     従来のバイキュービック拡大＋アンシャープは輪郭がにじみ縁取りが出ていたが、
+     学習済みモデルで線・瞳・髪の細部を復元する。
+     モデルは初回のみ取得し IndexedDB に保存（2回目以降はオフラインでも動作）。
+       anime  … Real-CUGAN 2x(高画質) / Real-ESRGAN animevideov3 4x
+       real   … Real-ESRGAN general-x4v3
+   ════════════════════════════════════════════════════════════ */
+const AI_SR_MODELS = {
+  cugan2x:   { cfg:{ modelType:'realcugan',  scale:2, denoise:'conservative' }, scale:2, label:'Real-CUGAN 2x' },
+  anime4x:   { cfg:{ modelType:'realesrgan', model:'anime_fast' },              scale:4, label:'Real-ESRGAN anime 4x' },
+  general4x: { cfg:{ modelType:'realesrgan', model:'general_fast' },            scale:4, label:'Real-ESRGAN 4x' },
+};
+const AI_SR_MAX_OUT_PX = 12e6;    // 出力の上限画素（iPhone のメモリ保護）
+const AI_SR_TIMEOUT_MS = 120000;
+
+function getAiSrEnabled() { try { return localStorage.getItem('lg_aisr') !== '0'; } catch(e) { return true; } }
+function setAiSrEnabled(on) {
+  try { localStorage.setItem('lg_aisr', on ? '1' : '0'); } catch(e){}
+  const b = document.getElementById('aiSrBtn');
+  if(b) { b.classList.toggle('active', on); b.textContent = on ? '🧠 AI超解像（端末内）：ON' : '🧠 AI超解像（端末内）：OFF'; }
+}
+// 長辺の目標px。AI超解像が使える時は高画質を 3072px まで引き上げる
+function upscaleTargetH(quality, ai) {
+  if(quality === 'hq')       return ai ? 3072 : 2304;
+  if(quality === 'balanced') return 1536;
+  return 0;                                // fast = 等倍
+}
+// どのモデルで何倍にするか。不要/不可なら null
+function planAiSR(style, srcW, srcH, quality) {
+  if(!getAiSrEnabled() || !AI_SR.available()) return null;
+  const target = upscaleTargetH(quality, true);
+  if(!target || srcH >= target * 0.95) return null;
+  const need = target / srcH;
+  let key;
+  if(style === 'real') {
+    if(need <= 2.2) return null;          // 写真調は FLUX 等の高解像度ソースならキャンバス拡大で十分
+    key = 'general4x';
+  } else {
+    // 高画質かつ2倍以内 → 最も綺麗な Real-CUGAN。それ以外は軽量な Real-ESRGAN anime 4x
+    key = (quality === 'hq' && need <= 2) ? 'cugan2x' : 'anime4x';
+  }
+  const m = AI_SR_MODELS[key];
+  // 出力が大きすぎる時は入力を縮めてから推論（メモリ保護）
+  let inScale = 1;
+  const outPx = srcW * srcH * m.scale * m.scale;
+  if(outPx > AI_SR_MAX_OUT_PX) inScale = Math.sqrt(AI_SR_MAX_OUT_PX / outPx);
+  return { key, model: m, inScale, target };
+}
+
+const AI_SR = (() => {
+  let ready = null, backend = null;
+  const ups = {};
+  const loadScript = src => new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = true; s.onload = res; s.onerror = () => rej(new Error('読み込み失敗: ' + src));
+    document.head.appendChild(s);
+  });
+  function init(forceWebGL) {
+    if(!ready || forceWebGL) ready = (async () => {
+      if(typeof tf === 'undefined') await loadScript('assets/ai/tf.min.js');
+      backend = 'webgl';
+      if(!forceWebGL && navigator.gpu) {
+        try {
+          if(!tf.findBackend || !tf.findBackend('webgpu')) await loadScript('assets/ai/tf-backend-webgpu.min.js');
+          if(await tf.setBackend('webgpu')) backend = 'webgpu';
+        } catch(e) { console.warn('[LGO] WebGPU不可→WebGL', e); }
+      }
+      if(backend === 'webgl') await tf.setBackend('webgl');
+      if(typeof WebUpscaler === 'undefined') await loadScript('assets/ai/upscaler.min.js');
+      return backend;
+    })().catch(e => { ready = null; throw e; });
+    return ready;
+  }
+  async function get(key, forceWebGL) {
+    const be = await init(forceWebGL);
+    const id = key + '@' + be;
+    if(!ups[id]) ups[id] = new WebUpscaler({ ...AI_SR_MODELS[key].cfg, backend: be,
+      modelBaseUrl: 'assets/ai/models', tileSize: 64, overlap: 12 });
+    return ups[id];
+  }
+  async function run(key, imageData, opt) {
+    try {
+      return await (await get(key)).upscaleImageData(imageData, opt);
+    } catch(e) {
+      if(e && e.name === 'AbortError') throw e;
+      if(backend !== 'webgpu') throw e;
+      console.warn('[LGO] WebGPU推論失敗→WebGLで再試行', e);
+      return (await get(key, true)).upscaleImageData(imageData, opt);
+    }
+  }
+  return {
+    run,
+    available: () => !!(navigator.gpu || window.WebGL2RenderingContext),
+    backend: () => backend,
+  };
+})();
+
+// <img>/canvas を AI 超解像し、長辺 plan.target に合わせた canvas を返す
+async function aiUpscaleCanvas(srcEl, plan, opt) {
+  const sw = srcEl.naturalWidth || srcEl.width, sh = srcEl.naturalHeight || srcEl.height;
+  const iw = Math.max(16, Math.round(sw * plan.inScale)), ih = Math.max(16, Math.round(sh * plan.inScale));
+  const inCv = document.createElement('canvas'); inCv.width = iw; inCv.height = ih;
+  const ictx = inCv.getContext('2d', { willReadFrequently: true });
+  ictx.imageSmoothingEnabled = true; ictx.imageSmoothingQuality = 'high';
+  ictx.drawImage(srcEl, 0, 0, iw, ih);
+  const out = await AI_SR.run(plan.key, ictx.getImageData(0, 0, iw, ih), opt);
+  const big = document.createElement('canvas'); big.width = out.width; big.height = out.height;
+  big.getContext('2d').putImageData(out, 0, 0);
+  if(Math.abs(out.height - plan.target) < 2) return big;
+  // 目標サイズへ高品質リサンプル（縮小時は2段に分けてモアレを防ぐ＝超解像の余剰分をスーパーサンプリング）
+  let cur = big;
+  while(cur.height > plan.target * 2) {
+    const h = Math.round(cur.height / 2), w = Math.round(cur.width / 2);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+    x.drawImage(cur, 0, 0, w, h); cur = c;
+  }
+  const fw = Math.round(cur.width * plan.target / cur.height);
+  const fin = document.createElement('canvas'); fin.width = fw; fin.height = plan.target;
+  const fx = fin.getContext('2d'); fx.imageSmoothingEnabled = true; fx.imageSmoothingQuality = 'high';
+  fx.drawImage(cur, 0, 0, fw, plan.target);
+  return fin;
+}
+
 // キー付き取得: <img>はAuthorizationヘッダーを送れないため fetch+Bearer で認証する。
 // これで sk_/pk_ が正しく認証され、gen側が指定サイズ（縦長）を反映。blob化で毎回別画像になりループも解消。
 // track=false のときは lastKeyedObjUrl を書き換えない（呼び出し側が寿命を管理する）。
@@ -1978,6 +2299,7 @@ let _lastPromptData = null;
 let _lastSeed = 0; // その画像を生成した実シード（バリエーションの基準に使う＝生成ごとに変わる）
 let _lastImgInfo = null; // 直近生成の受信解像度・形式（診断表示用）
 let _lastKeyedError = null; // 直近のkeyed失敗理由（診断表示用）
+let _lastFreeError  = null; // 直近の無料FLUX失敗理由（診断表示用）
 // 結果画面の常設「品質バッジ」：キー付きネイティブ か 無料fluxアップスケール かを明示
 function _renderQualityBadge() {
   const el = document.getElementById('qualityBadge');
@@ -1985,36 +2307,52 @@ function _renderQualityBadge() {
   const info = _lastImgInfo;
   if(!info) { el.style.display = 'none'; el.textContent = ''; return; }
   el.style.display = '';
-  const native = (info.winner === 'Pollinations-HD');
-  if(native) {
-    el.className = 'quality-badge native';
-    el.innerHTML = `✨ キー付きネイティブ高解像度 ／ <b>${info.model}</b> ／ ${info.w}×${info.h} ${info.fmt}`
-      + (info.err ? `<span class="qb-note">※選択モデルは使えず flux で生成</span>` : '');
-  } else {
-    el.className = 'quality-badge free';
-    const tgt = upscaleTargetH(info.quality);
-    el.innerHTML = `🆓 無料flux を高画質化 ／ 受信 ${info.w}×${info.h}`
-      + (tgt ? ` → ${tgt}px へ拡大＋鮮明化` : `（等倍）`) + ` ${info.fmt}`
-      + (info.err ? `<span class="qb-note">※本日のキー無料枠を使い切り→無料モード（明日回復）</span>` : '');
-  }
+  el.className = 'quality-badge ' + (info.hd ? 'native' : 'free');
+  let html = `${info.hd ? '✨' : '🆓'} <b>${esc(info.source)}</b> ／ 生成 ${info.w}×${info.h}`;
+  if(info.srState === 'running')   html += ` ／ 🧠 AI超解像で精細化中… ${Math.floor(info.progress || 0)}%`;
+  else if(info.srState === 'done') html += ` → <b>${info.ow}×${info.oh}</b>（🧠 ${esc(info.sr)}）`;
+  else if(info.oh && info.oh !== info.h) html += ` → ${info.ow}×${info.oh}（拡大＋鮮明化）`;
+  html += ` ${info.fmt || ''}`;
+  if(info.note) html += `<span class="qb-note">${esc(info.note)}</span>`;
+  el.innerHTML = html;
 }
+// 生成元の表示名と、高画質ルートを使えなかった理由
+function describeSource(winner) {
+  const keyedErr = _lastKeyedError ? String(_lastKeyedError.message || _lastKeyedError) : '';
+  if(winner === 'Pollinations-HD')
+    return { source: `Pollinations ${getPollinModel()}`, hd: true, note: keyedErr ? '※選択モデルは使えず flux で生成' : '' };
+  const hd = /^FLUX/.test(winner);
+  let note = '';
+  if(getPollinKey() && keyedErr) note = '※Pollinations のキーが使えなかったため無料経路で生成';
+  if(!hd && getHfEnabled() && _lastFreeError)
+    note = (note ? note + ' ／ ' : '※') + (hfQuotaWait(String(_lastFreeError.message || '')) ? '無料FLUXの本日のGPU枠を使い切り（時間をおくと回復）' : '無料FLUXに接続できず');
+  return { source: winner, hd, note };
+}
+
+let _varAbort = null;
 function _genOneVariation(seed, pd, onOk, onErr) {
+  const freeImg = () => {
+    const u = buildPollinUrl(pd, seed, 'free');
+    const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => onOk(u, false, 'Pollinations 無料'); im.onerror = () => onErr && onErr();
+    im.src = u;
+  };
+  // 無料FLUX（Hugging Face）→ 失敗/枠切れなら Pollinations 無料
+  const viaHf = () => {
+    if(!getHfEnabled() || pd.mode === 'img2img' || !['schnell','dev'].some(k => !hfCooldownLeft(k))) { freeImg(); return; }
+    const q = getImgQuality() === 'fast' ? 'fast' : 'balanced';   // 3枚ぶんのGPU枠を考え schnell を使う
+    hfGenerate(pd, seed, q, { signal: _varAbort && _varAbort.signal })
+      .then(r => onOk(URL.createObjectURL(r.blob), true, r.label))
+      .catch(e => { if(!(_varAbort && _varAbort.signal.aborted)) freeImg(); });
+  };
   const pk = getPollinKey();
   if(pk) {
     fetchKeyedImage(buildPollinationsUrl(pd, seed), pk,
-      (obj) => onOk(obj, true),
-      () => { // keyed失敗→無鍵Image（Hordeは使わない）
-        const u = buildPollinUrl(pd, seed, 'free');
-        const im = new Image(); im.crossOrigin = 'anonymous';
-        im.onload = () => onOk(u, false); im.onerror = () => onErr && onErr();
-        im.src = u;
-      },
+      (obj) => onOk(obj, true, 'Pollinations-HD'),
+      viaHf,
       false);   // ← 3枚を同時に保持するので自動解放しない
   } else {
-    const u = buildPollinUrl(pd, seed, 'free');
-    const im = new Image(); im.crossOrigin = 'anonymous';
-    im.onload = () => onOk(u, false); im.onerror = () => onErr && onErr();
-    im.src = u;
+    viaHf();
   }
 }
 function _renderVarStrip() {
@@ -2039,12 +2377,15 @@ function generateVariations() {
   if(!pd) return;
   const pk = getPollinKey();
   if(pk && !confirm('🎲 バリエーションを3枚生成します。\n※Pollen（キー）を3枚分消費します。よろしいですか？')) return;
+  if(!pk && getHfEnabled() && pd.mode !== 'img2img') showToast('🎲 無料FLUXで3枚生成します（無料GPU枠を3枚分使います）');
   // 基準は「この画像の実シード」。フリー入力や再生成では毎回変わるので、
   // 同じプロンプトでも生成のたびに3枚が必ず変わる（当日シード固定だと同一URL→キャッシュで変わらなかった）
   const base = _lastSeed || (currentDiv ? getDailySeed(currentDiv) : Math.floor(Math.random() * 1000000));
   const seeds = [base + 1001, base + 2002, base + 3003]; // 本命(base)と必ず異なる
   _varRunning = true;
   const run = ++_varRun;
+  if(_varAbort) _varAbort.abort();
+  _varAbort = new AbortController();
   _varItems = [undefined, undefined, undefined];
   const btn = document.getElementById('varBtn');
   if(btn) { btn.disabled = true; btn.textContent = '🎲 3枚生成中…'; }
@@ -2052,10 +2393,10 @@ function generateVariations() {
   // ②修正: 3枚同時だと無料枠の同時アクセス制限で失敗するため、1枚ずつ順次生成（失敗時は別シードで1回リトライ）
   let idx = 0;
   const setBtnProgress = () => { if(btn) btn.textContent = `🎲 生成中… ${Math.min(idx + 1, 3)}/3`; };
-  const finishOne = (i, url, isObj) => {
+  const finishOne = (i, url, isObj, label) => {
     // 途中で再生成・フリー生成などが始まった → 結果を捨てて連鎖を止める（Pollenの無駄遣い防止）
     if(run !== _varRun) { if(url && isObj) { try { URL.revokeObjectURL(url); } catch(e){} } return; }
-    _varItems[i] = url ? { url, isObj } : null;
+    _varItems[i] = url ? { url, isObj, label } : null;
     _renderVarStrip();
     runNext();
   };
@@ -2068,13 +2409,13 @@ function generateVariations() {
     const i = idx++;
     setBtnProgress();
     _genOneVariation(seeds[i], pd,
-      (url, isObj) => finishOne(i, url, isObj),
+      (url, isObj, label) => finishOne(i, url, isObj, label),
       () => {
         // 失敗→別シードで1回だけリトライ（連続アクセスを避けるため少し待つ）
         setTimeout(() => {
           if(run !== _varRun) return;
           _genOneVariation(seeds[i] + 4321, pd,
-            (url, isObj) => finishOne(i, url, isObj),
+            (url, isObj, label) => finishOne(i, url, isObj, label),
             () => finishOne(i, null, false));
         }, 500);
       });
@@ -2087,6 +2428,7 @@ function _clearVariations() {
   _varItems = [];
   _varRunning = false;
   _varRun++;              // 走行中のバリエーション連鎖を無効化
+  if(_varAbort) { _varAbort.abort(); _varAbort = null; }
   const strip = document.getElementById('varStrip');
   if(strip) strip.innerHTML = '';
   const btn = document.getElementById('varBtn');
@@ -2111,7 +2453,7 @@ function selectVariation(i) {
   if(strip) strip.innerHTML = '';
   // 本命として表示＆履歴保存（共通のfinishWithImage経由・新しい世代トークンで）
   // keyedで得た1枚は品質バッジを「ネイティブ高解像度」として出す（旧版は常に無料扱いで誤表示）
-  finishWithImage(chosenUrl, it.isObj ? 'Pollinations-HD' : 'Pollinations', _lastPromptData, ++GEN_TOKEN);
+  finishWithImage(chosenUrl, it.label || (it.isObj ? 'Pollinations-HD' : 'Pollinations 無料'), _lastPromptData, ++GEN_TOKEN);
 }
 
 // ── 完成画像をUIへ反映し、履歴保存・pending解除（共通処理）──
@@ -2121,11 +2463,6 @@ function selectVariation(i) {
 //  幸いCORSが許可されているので、受信画像をcanvasで目標解像度へ高品質拡大し、
 //  HQでは軽いシャープ処理で鮮明化して保存・表示する。
 // ════════════════════════════════════════════════════════════
-function upscaleTargetH(quality) {
-  if(quality === 'hq')       return 2304; // 縦(長辺)目標px
-  if(quality === 'balanced') return 1536;
-  return 0;                                // fast = 等倍
-}
 function sharpenCanvas(ctx, w, h, k) {
   if(w < 3 || h < 3) return;
   try {
@@ -2255,29 +2592,31 @@ function finishWithImage(src, winner, promptData, token) {
     img.src = displayUrl;
   };
 
-  // 受信画像をオフスクリーンで読み込み → 必要なら高品質アップスケール
-  // キーが入っていれば（経路が keyed 成功でも無鍵フォールバックでも）高解像度PNGで保存する
+  // 受信画像をオフスクリーンで読み込み → まず即表示 → 必要なら裏で AI 超解像して差し替え
+  // キーが入っていれば（経路を問わず）PNG で保存する
   const keyed = !!getPollinKey() || !!(promptData && promptData.keyed) || winner === 'Pollinations-HD';
+  const encode = cv => canvasToBlob(cv, keyed ? 'image/png' : 'image/jpeg', 0.95);
   const off = new Image(); off.crossOrigin = 'anonymous';
   off.onload = async () => {
+    const style = (promptData && promptData.style) || currentStyle;
+    const plan  = planAiSR(style, off.naturalWidth, off.naturalHeight, quality);
+    const info  = _lastImgInfo = { quality, w: off.naturalWidth || 0, h: off.naturalHeight || 0, winner, ...describeSource(winner) };
     let blob = null, thumb = null;
     try {
-      const up = upscaleCanvas(off, quality);
-      const cv = up || drawToCanvas(off);
-      blob  = await canvasToBlob(cv, keyed ? 'image/png' : 'image/jpeg', up ? 0.95 : 0.92);
+      // AI超解像する予定なら原寸のまま先に出す（数秒〜十数秒かかるため待たせない）
+      const cv = (plan ? null : upscaleCanvas(off, quality)) || drawToCanvas(off);
+      blob  = await encode(cv);
       thumb = makeThumb(off);
-      _lastImgInfo = { quality, w: off.naturalWidth || 0, h: off.naturalHeight || 0,
-        fmt: blob.type === 'image/png' ? 'PNG' : 'JPEG', winner,
-        model: (getPollinKey() ? getPollinModel() : '無料'),
-        err: (winner !== 'Pollinations-HD' && _lastKeyedError) ? String((_lastKeyedError && _lastKeyedError.message) || _lastKeyedError) : '' };
+      info.ow = cv.width; info.oh = cv.height; info.fmt = blob.type === 'image/png' ? 'PNG' : 'JPEG';
     } catch(e) { blob = null; }
     // 履歴にはフル解像度(Blob)とサムネを保存。サムネが作れない(CORS汚染)時は元URL。
     const persist = thumb || (/^(data:|https?:)/.test(src) ? src : '');
-    if(persist) saveToHistory(promptData, persist, recovered, blob);
+    const histId = persist ? saveToHistory(promptData, persist, recovered, blob) : null;
     // エンコード中に別の生成が始まっていたら、表示は新しい方に譲る（保存だけ行う）
     if(token !== GEN_TOKEN) return;
-    if(blob) show(URL.createObjectURL(blob), thumb, winner, blob);
-    else     show(src, thumb, winner, null);
+    if(!blob) { show(src, thumb, winner, null); return; }
+    show(URL.createObjectURL(blob), thumb, winner, blob);
+    if(plan) runAiEnhance(off, plan, { token, histId, encode, quality });
   };
   off.onerror = () => {
     if(token !== GEN_TOKEN) return;
@@ -2285,6 +2624,49 @@ function finishWithImage(src, winner, promptData, token) {
     show(src, null, winner, null);
   };
   off.src = src;
+}
+
+// 表示済みの画像を AI 超解像し、完了したら表示・保存データ・履歴を差し替える
+async function runAiEnhance(off, plan, ctx) {
+  const info = _lastImgInfo;
+  info.srState = 'running'; info.progress = 0; info.sr = plan.model.label;
+  _renderQualityBadge();
+  const ac = new AbortController(); _srAbort = ac;
+  const to = setTimeout(() => ac.abort(), AI_SR_TIMEOUT_MS);
+  let lastPaint = 0;
+  const swapIn = async (cv) => {
+    const blob = await ctx.encode(cv);
+    if(ctx.histId) updateHistoryFull(ctx.histId, blob);
+    if(ctx.token !== GEN_TOKEN) return;
+    info.ow = cv.width; info.oh = cv.height; info.fmt = blob.type === 'image/png' ? 'PNG' : 'JPEG';
+    const url = URL.createObjectURL(blob);
+    setMainImageUrl(url);
+    prepareSaveData(blob);
+    document.getElementById('mainImg').src = url;
+  };
+  try {
+    const cv = await aiUpscaleCanvas(off, plan, {
+      signal: ac.signal,
+      onProgress: pct => {
+        info.progress = pct;
+        const now = performance.now();
+        if(now - lastPaint > 250 && ctx.token === GEN_TOKEN) { lastPaint = now; _renderQualityBadge(); }
+      },
+    });
+    await swapIn(cv);
+    info.srState = 'done';                        // 差し替えまで終えてから完了扱いにする
+  } catch(e) {
+    if(ctx.token !== GEN_TOKEN) return;           // 新しい生成に置き換わった（中断）→ 何もしない
+    console.warn('[LGO] AI超解像に失敗→通常の拡大に切替:', e);
+    info.srState = 'failed';
+    info.note = (info.note ? info.note + ' ／ ' : '※') + 'AI超解像を使えなかったため通常の拡大で保存';
+    const up = upscaleCanvas(off, ctx.quality);
+    if(up) { try { await swapIn(up); } catch(e2) {} }
+  } finally {
+    clearTimeout(to);
+    if(_srAbort === ac) _srAbort = null;
+    if(ctx.token === GEN_TOKEN) _renderQualityBadge();
+  }
 }
 
 // ── Hordeジョブのポーリング（初回・再開の両方で再利用）──
@@ -2329,19 +2711,27 @@ function pollHordeJob(jobId, promptData, onFail, token) {
 }
 
 // ── Hordeジョブ投入（投入後すぐ pending に jobId を記録）──
-function submitHorde(promptData, onFail, token) {
+function submitHorde(promptData, onFail, token, legacy) {
   const apiKey = getHordeKey();
-  const models = promptData.style === 'anime' ? ANIME_MODELS : REAL_MODELS;
+  const anime  = promptData.style === 'anime';
   const qh = (IMG_QUALITY_PRESETS[getImgQuality()] || IMG_QUALITY_PRESETS.balanced).horde;
+  const params = legacy
+    ? { width:qh[0], height:qh[1], steps:qh[2], cfg_scale:7, sampler_name:'k_euler_a', karras:true, post_processing:['CodeFormers'], n:1 }
+    : { width:832, height:1216, steps:28, cfg_scale:6, sampler_name:'k_dpmpp_2m', karras:true, n:1 };
+  const models = legacy ? (anime ? ANIME_MODELS : REAL_MODELS) : (anime ? ANIME_MODELS_XL : REAL_MODELS_XL);
+  // SDXL が受け付けられない/対応ワーカー不在 → SD1.5 で1回だけ出し直す
+  const fail = msg => {
+    if(!legacy && /対応ワーカー|接続に失敗/.test(msg || '')) { submitHorde(promptData, onFail, token, true); return; }
+    onFail && onFail(msg);
+  };
   const hint = document.getElementById('loadingPromptHint');
-  if(hint) hint.textContent = '✦ Horde キューに追加中…';
+  if(hint) hint.textContent = legacy ? '✦ Horde(SD1.5) キューに追加中…' : '✦ Horde(SDXL) キューに追加中…';
   fetch(`${HORDE_API}/generate/async`, {
     method: 'POST',
     headers: { 'Content-Type':'application/json', 'apikey':apiKey, 'Client-Agent':CLIENT_AGENT },
     body: JSON.stringify({
       prompt: promptData.prompt + ' ### ' + promptData.negative,
-      params: { width:qh[0], height:qh[1], steps:qh[2], cfg_scale:7, sampler_name:'k_euler_a', karras:true, post_processing:['CodeFormers'], n:1 },
-      r2:false, nsfw:false, censor_nsfw:true,
+      params, r2:false, nsfw:false, censor_nsfw:true,
       trusted_workers: apiKey !== HORDE_ANON, slow_workers:true, models,
     })
   })
@@ -2349,9 +2739,9 @@ function submitHorde(promptData, onFail, token) {
   .then(data => {
     if(!data.id) throw new Error('no job id');
     patchPending({ hordeJobId: data.id });
-    pollHordeJob(data.id, promptData, onFail, token);
+    pollHordeJob(data.id, promptData, fail, token);
   })
-  .catch(e => { console.warn('Horde submit:', e); onFail && onFail('Horde接続に失敗しました'); });
+  .catch(e => { console.warn('Horde submit:', e); fail('Horde接続に失敗しました'); });
 }
 
 // ════════════════════════════════════════════════════════════
@@ -2407,68 +2797,92 @@ function generateImage(promptData, seed) {
   secTimer = setInterval(() => {
     secs++;
     if(!done && hint) hint.textContent = `✦ 生成中… ${secs}秒`;
-    if(secs > 300) { stopAll(); onFail('タイムアウト（300秒）'); }
+    if(secs > 480) { stopAll(); onFail('タイムアウト（480秒）'); }
   }, 1000);
 
-  // ① Pollinations 優先（通常はこれで高速完了）
-  //    フォールバック段: keyed → keyed(flux) → 無鍵通常 → 簡易URL → Horde
-  hint.textContent = '✦ 生成中… (Pollinations AI)';
+  // 生成経路（上から順に試し、失敗したら次へ）
+  //   キー有り: Pollinations keyed(選択モデル) → keyed(flux) ┐
+  //   キー無し: ───────────────────────────────────────────┴→ 無料FLUX(Hugging Face)
+  //             → Pollinations 無料 → 簡易URL → Stable Horde(SDXL)
+  //   ※ 一定時間で終わらなければ Horde を保険として並走させる
+  const armHorde = (ms) => {
+    if(pollinTimer) clearTimeout(pollinTimer);
+    pollinTimer = setTimeout(() => {
+      if(!done && !hordeJobId) { if(hint) hint.textContent = '✦ Horde も生成開始…'; submitHorde(promptData, onFail, genToken); }
+    }, ms);
+  };
 
-  // ③ 簡易URL（パラメータ付きAPIが500を返す障害時の最後の砦）→ 失敗ならHorde
+  // ⑤ 簡易URL（パラメータ付きAPIが500を返す障害時）→ 失敗ならHorde
   const tryPlainThenHorde = () => {
     if(done) return;
     const plainUrl = buildPollinUrl(promptData, Math.floor(Math.random()*1000000), 'plain');
     if(hint) hint.textContent = '✦ 簡易モードで再試行中…（API障害対応）';
     const p2 = new Image(); p2.crossOrigin = 'anonymous';
-    p2.onload  = () => { if(!done) win(plainUrl, 'Pollinations簡易'); };
+    p2.onload  = () => { if(!done) win(plainUrl, 'Pollinations 無料'); };
     p2.onerror = () => {
       if(!done && !hordeJobId) { if(hint) hint.textContent = '✦ Hordeに切替中…'; submitHorde(promptData, onFail, genToken); }
     };
     p2.src = plainUrl;
   };
-  // ② 無鍵通常URL（画質モードのモデル/サイズを維持したまま再試行）
-  const tryNoKeyThenPlain = () => {
+  // ④ Pollinations 無料（画質モードのモデル/サイズ）
+  const tryPollinFree = () => {
     if(done) return;
-    const noKeyUrl = buildPollinUrl(promptData, seed, 'free');
-    if(hint) hint.textContent = '✦ 通常モードで再試行中…';
+    armHorde(HORDE_DELAY_MS.free);
+    const url = buildPollinUrl(promptData, seed, 'free');
+    if(hint) hint.textContent = '✦ 生成中… (Pollinations 無料)';
     const p1 = new Image(); p1.crossOrigin = 'anonymous';
-    p1.onload  = () => { if(!done) win(noKeyUrl, 'Pollinations通常'); };
+    p1.onload  = () => { if(!done) win(url, 'Pollinations 無料'); };
     p1.onerror = tryPlainThenHorde;
-    p1.src = noKeyUrl;
+    p1.src = url;
+  };
+  // ③ 無料FLUX（Hugging Face）… クレジット不要で 1024×1536 をネイティブ生成
+  const tryHfThenFree = () => {
+    if(done) return;
+    if(!getHfEnabled() || promptData.mode === 'img2img') { tryPollinFree(); return; }
+    armHorde(HORDE_DELAY_MS.hf);
+    const ac = new AbortController(); _genAbort = ac;
+    const t0 = Date.now();
+    hfGenerate(promptData, seed, getImgQuality(), {
+      signal: ac.signal,
+      onStatus: (label, ev) => {
+        if(done || !hint) return;
+        const sec = Math.round((Date.now() - t0) / 1000);
+        hint.textContent = ev === 'generating' ? `✦ ${label} で描画中… ${sec}秒`
+                                               : `✦ ${label}（無料GPU）の順番待ち… ${sec}秒`;
+      },
+    }).then(r => {
+      if(_genAbort === ac) _genAbort = null;
+      if(!done) win(URL.createObjectURL(r.blob), r.label);
+    }).catch(e => {
+      if(_genAbort === ac) _genAbort = null;
+      if(done || ac.signal.aborted) return;
+      _lastFreeError = e;
+      tryPollinFree();
+    });
   };
 
   const _pk = getPollinKey();
   if(_pk) {
-    // キー使用時は fetch+Bearer で取得（<img>はヘッダー不可＝匿名化して正方形になる問題を解消）
+    // ①② キー使用時は fetch+Bearer で取得（<img>はヘッダー不可）
+    hint.textContent = '✦ 生成中… (Pollinations AI)';
+    armHorde(HORDE_DELAY_MS.keyed);
     fetchKeyedImage(pollinUrl, _pk,
       (objUrl) => { if(!done) win(objUrl, 'Pollinations-HD'); },
       (err) => {
-        _lastKeyedError = err; // 失敗理由を記録（診断表示）
+        _lastKeyedError = err;
         if(done) return;
-        // 選択モデル(例: nanobanana-2)がキーで失敗 → 無料0.6MPに落とさず、キー付きfluxで高解像度リトライ
         if(getPollinModel() !== 'flux') {
           if(hint) hint.textContent = '✦ Fluxで高画質リトライ中…';
           fetchKeyedImage(buildPollinUrl(promptData, seed, 'keyed', 'flux'), _pk,
             (objUrl) => { if(!done) win(objUrl, 'Pollinations-HD'); },
-            (err2)   => { _lastKeyedError = err2 || err; if(!done) tryNoKeyThenPlain(); });
+            (err2)   => { _lastKeyedError = err2 || err; if(!done) tryHfThenFree(); });
         } else {
-          tryNoKeyThenPlain();
+          tryHfThenFree();
         }
       });
   } else {
-    const pollinImg = new Image();
-    pollinImg.crossOrigin = 'anonymous';
-    pollinImg.onload  = () => { if(!done) win(pollinUrl, 'Pollinations'); };
-    pollinImg.onerror = tryPlainThenHorde;
-    pollinImg.src = pollinUrl;
+    tryHfThenFree();
   }
-
-  // ② 一定時間で未完了なら Horde も並行起動（保険）
-  //    keyed は高性能モデルが30〜60秒かかるのが普通。18秒で低画質なHordeを並走させると
-  //    そちらが先着して高解像度の結果が捨てられるため、keyed はタイムアウト後まで待つ。
-  pollinTimer = setTimeout(() => {
-    if(!done && !hordeJobId) { hint.textContent = '✦ Horde も生成開始…'; submitHorde(promptData, onFail, genToken); }
-  }, _pk ? HORDE_DELAY_MS.keyed : HORDE_DELAY_MS.free);
 }
 
 function getDailySeed(div) {
@@ -2869,9 +3283,12 @@ function toggleSettings() {
   if(panel.classList.contains('open')) {
     try { document.getElementById('hordeKeyInput').value = localStorage.getItem('lg_hordekey') || ''; } catch(e){}
     try { document.getElementById('pollinKeyInput').value = localStorage.getItem('lg_pollinkey') || ''; } catch(e){}
+    try { document.getElementById('hfTokenInput').value = getHfToken(); } catch(e){}
     setPollinModel(getPollinModel());
     setSafeMode(getSafeMode());
     setEnhanceMode(getEnhanceMode());
+    setHfEnabled(getHfEnabled());
+    setAiSrEnabled(getAiSrEnabled());
   }
 }
 
@@ -3035,6 +3452,7 @@ const dayKeyOf = d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 function checkDayRollover() {
   if(!currentDiv || isGenerating || dayKeyOf(new Date()) === dayKeyOf(currentDiv.now)) return false;
   refreshDivination();
+  stopAll();
   const img = document.getElementById('mainImg');
   img.classList.remove('loaded'); img.removeAttribute('src');
   setMainImageUrl(null); prepareSaveData(null);

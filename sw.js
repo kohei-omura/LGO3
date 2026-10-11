@@ -1,7 +1,7 @@
 // 運気の女神 Lucky Girl Oracle ── Service Worker
 // アプリシェル(HTML/アイコン)をキャッシュしてオフライン起動＆高速再表示。
 // 画像生成API(Pollinations/Horde)など外部オリジンはSWを介さずネットワークへ通す。
-const CACHE = 'lg-oracle-v3';
+const CACHE = 'lg-oracle-v4';
 const FONT_CACHE = 'lg-fonts-v1';   // Google Fonts（更新頻度が低いので別枠で長期保持）
 
 // アプリシェル: 起動に必須のものだけ。スプラッシュ(assets/splash)は
@@ -72,6 +72,9 @@ self.addEventListener('fetch', e => {
     );
     return;
   }
+
+  // AI超解像のモデル重みは本体側が IndexedDB に保存するので、SWでは二重に持たない
+  if (url.pathname.includes('/assets/ai/models/')) return;
 
   // その他の同一オリジン資産: stale-while-revalidate
   //   → キャッシュがあれば即返して体感を最速に、裏で静かに最新へ更新する

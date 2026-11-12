@@ -210,11 +210,17 @@
   // ════════════════════════════════════════════════════════════
   const VAE_SCALE = 0.18215;
   function abortErr() { const e = new Error('中断しました'); e.name = 'AbortError'; return e; }
-  async function withSession(env, comp, dims, fn) {
-    const src = await env.loadModel(comp);
-    const s = await env.ort.InferenceSession.create(src, env.sessionOptions(comp, dims));
+  // loadModel は「モデル本体」か「設計図＋外部データ」({ model, externalData }) を返す。
+  // 外部データ方式なら onnxruntime-web は重みを wasm に複製せず GPU へ直接送る（メモリ節約）。
+  async function withSession(env, comp, dims, fn, prog) {
+    if (prog) prog(comp + ':load', 0);
+    let src = await env.loadModel(comp);
+    let opts = env.sessionOptions(comp, dims);
+    if (src && src.model) { opts = Object.assign({}, opts, { externalData: src.externalData }); src = src.model; }
+    let s = await env.ort.InferenceSession.create(src, opts);
+    src = null; opts = null;                       // 重みのコピーを手放して GC に回収させる
     try { return await fn(s); }
-    finally { try { await s.release(); } catch (e) {} }
+    finally { try { await s.release(); } catch (e) {} s = null; }
   }
 
   async function generate(env, o) {
@@ -240,7 +246,7 @@
     const hid = await withSession(env, 'text_encoder', { batch: 2 }, async s => {
       const out = await s.run({ input_ids: new ort.Tensor('int64', ids, [2, MAX_LEN]) });
       return toF32(out.last_hidden_state.data);
-    });
+    }, prog);
     const hs = MAX_LEN * 768;
     const ctxUncond = fromF32(ort, dt, hid.subarray(0, hs), [1, MAX_LEN, 768]);
     const ctxCond   = fromF32(ort, dt, hid.subarray(hs, 2 * hs), [1, MAX_LEN, 768]);
@@ -262,7 +268,7 @@
         lat = sch.step(i, eps, lat);
         prog('unet', (i + 1) / steps);
       }
-    });
+    }, prog);
     const msUnet = Date.now() - tUnet;
     check();
 
@@ -272,7 +278,7 @@
     const img = await withSession(env, 'vae_decoder', { batch: 1, h: lh, w: lw }, async s => {
       const out = await s.run({ latent_sample: fromF32(ort, dt, lat, [1, 4, lh, lw]) });
       return toF32(out.sample.data);
-    });
+    }, prog);
     const rgba = new Uint8ClampedArray(W * H * 4), plane = W * H;
     for (let p = 0; p < plane; p++) {
       rgba[p * 4]     = (img[p] / 2 + 0.5) * 255 + 0.5;

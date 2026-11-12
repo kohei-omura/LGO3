@@ -20,6 +20,20 @@
 | `local-gen-core.js` | CLIP トークナイザ／DPM-Solver++ 2M／生成パイプライン（本アプリ独自） | — |
 | `local-gen.js` | モデルの取得・保存・実行の管理（本アプリ独自） | — |
 | `local-gen-worker.js` | OPFS への保存・再開・SHA-256 検証を行う Worker（本アプリ独自） | — |
+| `graphs/{M,S}/*.onnx` | 各モデルの「設計図」（重みなし・計1.9MB）。`tools/make_external_graph.py` で生成 | 元モデルに従う |
+
+### 設計図（外部データ方式）について
+モデル丸ごと（例: unet 647MB）を onnxruntime-web に渡すと、wasm メモリへ複製されて約2.4倍に膨らみ、
+iPhone（Safari のページ上限 約1.9GB）で強制終了していました。設計図＋元ファイルを `externalData` として渡すと、
+重みは wasm を通らず GPU へ直接送られます。
+
+| 計測（Chromium・WebGPU・fp32） | 旧方式 | 設計図方式 |
+| --- | --- | --- |
+| unet（1.23GB）作成後の wasm メモリ | 2967 MB | 16 MB |
+| vae_decoder（0.19GB） | 412 MB | 16 MB |
+| 出力 | — | 完全一致 |
+
+設計図の重みは「元の model.onnx 内のバイト位置」を指すため、配布元のファイルを未改変のまま使えます。
 
 モデル本体はリポジトリに含めず、利用者の端末が初回だけ Hugging Face から取得して OPFS に保存します。
 

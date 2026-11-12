@@ -42,7 +42,7 @@
   const FALLBACK_SIZE = { w: 384, h: 576 };   // メモリ不足で落ちた時に1回だけ縮めて再試行
 
   // テスト時のみ差し替え可能（配布元・実行方式・モデル定義）
-  const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/' };
+  const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true };
 
   const loadScript = src => new Promise((res, rej) => {
     const s = document.createElement('script');
@@ -163,10 +163,16 @@
     const t = cfg.tiers[id];
     return {
       ort, dtype: t.dtype,
-      // 部品をOPFSから読み出す（使い終わると参照を手放し、メモリを返す）
+      // 部品の読み出し。設計図（重みなし・assets/ai/graphs）＋ OPFS の元ファイルを外部データとして渡す。
+      //   旧方式（モデル丸ごと）は onnxruntime が重みを wasm メモリへ複製し、iPhone の上限（約1.9GB）を
+      //   超えてページが強制終了していた。外部データ方式なら重みは JS から GPU へ直接転送される。
       loadModel: async comp => {
         const f = await (await (await dirOf(id)).getFileHandle(comp + '.onnx')).getFile();
-        return new Uint8Array(await f.arrayBuffer());
+        if (!cfg.useGraphs) return new Uint8Array(await f.arrayBuffer());
+        const g = await fetch(`${cfg.assetBase}graphs/${id}/${comp}.onnx`);
+        if (!g.ok) throw new Error('設計図ファイルを読み込めません: ' + comp);
+        const model = new Uint8Array(await g.arrayBuffer());
+        return { model, externalData: [{ path: comp + '.onnx', data: new Uint8Array(await f.arrayBuffer()) }] };
       },
       loadTokenizer: async () => {
         const c = await dirOf('common');
@@ -190,7 +196,7 @@
 
   // opts: { prompt, negative, seed, quality, signal, onProgress(phase, frac) }
   async function generate(o) {
-    const id = o.tier || readyTier();
+    const id = (o.tier && _ready[o.tier]) ? o.tier : readyTier();
     if (!id) throw new Error('端末内生成のモデルが保存されていません');
     await loadOrt();
     const plan = Object.assign({}, PLANS[o.quality] || PLANS.balanced, o.size || {});
@@ -211,6 +217,7 @@
   // オフラインで初めて生成する時に備え、実行部品を先に取得しておく（Service Worker が保存する）
   async function warmup() {
     const files = ['local-gen.js', 'local-gen-worker.js', 'local-gen-core.js', 'ort/ort.webgpu.min.js', 'ort/ort-wasm-simd-threaded.asyncify.mjs',
+                   ...['M', 'S'].flatMap(t => ['text_encoder', 'unet', 'vae_decoder'].map(c => `graphs/${t}/${c}.onnx`)),
                    'ort/ort-wasm-simd-threaded.asyncify.wasm', 'tf.min.js', 'tf-backend-webgpu.min.js', 'upscaler.min.js'];
     await Promise.all(files.map(f => fetch(cfg.assetBase + f).then(r => r.arrayBuffer()).catch(() => null)));
   }

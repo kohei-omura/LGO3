@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>✨ Lucky Girl Oracle v18</title>
+<title>✨ Lucky Girl Oracle v19</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0d0b1a">
 <meta name="description" content="毎日の占い(15占術統合)から、その日の運気の女の子をAI生成するデイリー占いアプリ。">
@@ -394,9 +394,9 @@
 
     <label class="settings-label" style="margin-top:4px">✦ 📴 端末内生成（通信なし・APIなしで生成）</label>
     <div class="quality-row" id="localModeRow">
-      <button class="quality-btn" data-l="auto" onclick="setLocalMode('auto')">🔄 自動<small>通信できない時に使う</small></button>
-      <button class="quality-btn" data-l="always" onclick="setLocalMode('always')">📴 常に使う<small>APIを使わない</small></button>
-      <button class="quality-btn" data-l="off" onclick="setLocalMode('off')">OFF<small>使わない</small></button>
+      <button class="quality-btn" data-l="auto" onclick="setLocalMode('auto', true); refreshLocalStatus()">🔄 自動<small>通信できない時に使う</small></button>
+      <button class="quality-btn" data-l="always" onclick="setLocalMode('always', true); refreshLocalStatus()">📴 常に使う<small>APIを使わない</small></button>
+      <button class="quality-btn" data-l="off" onclick="setLocalMode('off', true); refreshLocalStatus()">OFF<small>使わない</small></button>
     </div>
     <div class="local-box">
       <div class="local-status" id="localStatus">確認中…</div>
@@ -2681,6 +2681,7 @@ async function runAiEnhance(off, plan, ctx) {
   _renderQualityBadge();
   const ac = new AbortController(); _srAbort = ac;
   const to = setTimeout(() => ac.abort(), AI_SR_TIMEOUT_MS);
+  lsSet(SR_RUN_KEY, String(Date.now()));
   let lastPaint = 0;
   const swapIn = async (cv) => {
     const blob = await ctx.encode(cv);
@@ -2712,6 +2713,7 @@ async function runAiEnhance(off, plan, ctx) {
     if(up) { try { await swapIn(up); } catch(e2) {} }
   } finally {
     clearTimeout(to);
+    lsSet(SR_RUN_KEY, null);
     if(_srAbort === ac) _srAbort = null;
     if(ctx.token === GEN_TOKEN) _renderQualityBadge();
   }
@@ -2826,7 +2828,8 @@ function generateImage(promptData, seed) {
     ? `${currentDiv.now.getFullYear()}-${String(currentDiv.now.getMonth()+1).padStart(2,'0')}-${String(currentDiv.now.getDate()).padStart(2,'0')}`
     : '';
   // ★ 開始と同時に保存 → 中断後の回収が可能に
-  savePending({ mode: promptData.mode || 'oracle', promptData, seed, quality: getImgQuality(), pollinUrl, keyed: !!getPollinKey(), hordeJobId: null, dateKey });
+  const pend = { mode: promptData.mode || 'oracle', promptData, seed, quality: getImgQuality(), pollinUrl, keyed: !!getPollinKey(), hordeJobId: null, dateKey };
+  savePending(pend);
 
   let done = false;
   const onFail = (msg) => {
@@ -2857,7 +2860,7 @@ function generateImage(promptData, seed) {
   //   📴端末内: 「常に使う」なら最初に、「自動」でオフラインなら最初に（通信が要らない）
   //   ※ 一定時間で終わらなければ Horde を保険として並走させる（端末内の実行中は止める）
   const localMode  = getLocalMode();
-  const localReady = localAvailable() && promptData.mode !== 'img2img' && localMode !== 'off';
+  const localReady = localAvailable() && promptData.mode !== 'img2img' && localMode !== 'off' && !localCrashPaused();
   let localTried = false;
   const tryLocal = (next) => {
     if(done) return;
@@ -2865,20 +2868,33 @@ function generateImage(promptData, seed) {
     if(pollinTimer) { clearTimeout(pollinTimer); pollinTimer = null; }   // 端末内の実行中は Horde を並走させない
     limit = secs + 900;                                                  // 端末の性能しだいで数分かかる
     const ac = new AbortController(); _genAbort = ac;
-    setStage('📴 端末内で生成を準備中…');
+    clearPending();                                                      // 端末内の結果はサーバーに無いので「回収」対象にしない
+    const safe = localSafeOptions();                                     // 前回強制終了していたら軽い設定で
+    localRunMark('start', safe);
+    const tag = (safe.tier || safe.size) ? '（安全設定）' : '';
+    setStage('📴 端末内で生成を準備中…' + tag);
+    let lastPh = '';
     LOCAL_GEN.generate({
       prompt: promptData.prompt, negative: promptData.negative, seed, quality: getImgQuality(), signal: ac.signal,
-      onProgress: (ph, f) => setStage(ph === 'text' ? '📴 端末内: 文章を解析中…'
-                                    : ph === 'unet' ? `📴 端末内で描画中… ${Math.round(f * 100)}%`
-                                    :                 '📴 端末内: 仕上げ中…'),
+      tier: safe.tier, size: safe.size,
+      onProgress: (ph, f) => {
+        if(ph !== lastPh) { lastPh = ph; localRunMark(ph, safe); }       // どの段階で落ちたかを記録
+        setStage((/:load$/.test(ph) ? '📴 端末内: 部品を読み込み中…'
+                : ph === 'text' ? '📴 端末内: 文章を解析中…'
+                : ph === 'unet' ? `📴 端末内で描画中… ${Math.round(f * 100)}%`
+                :                 '📴 端末内: 仕上げ中…') + tag);
+      },
     }).then(r => {
       if(_genAbort === ac) _genAbort = null;
+      localRunClear(true);
       if(!done) win(URL.createObjectURL(r.blob), '端末内 ' + r.label);
     }).catch(e => {
       if(_genAbort === ac) _genAbort = null;
+      localRunClear(false);
       if(done || ac.signal.aborted) return;
       console.warn('[LGO] 端末内生成に失敗:', e);
       _lastLocalError = e;
+      if(!done) savePending(pend);                                       // ネットワーク経路に戻るので回収情報を戻す
       next();
     });
   };
@@ -3024,7 +3040,11 @@ function resumePendingGeneration() {
     stopAll(); isGenerating = false;
     if(regenBtn) regenBtn.disabled = false;
     if(loading) loading.classList.add('hidden');
-    if(errorDiv) {
+    setActionsEnabled(true);
+    const shown = document.getElementById('mainImg');
+    if(shown && shown.classList.contains('loaded')) {
+      showToast('前回の生成は回収できませんでした（表示中の画像はそのままです）');
+    } else if(errorDiv) {
       errorDiv.innerHTML = `<div class="error-icon">🌙</div><div class="error-msg">${msg||'前回の生成を回収できませんでした'}<br><small>「再生成」を押してください</small></div>`;
       errorDiv.style.display = 'flex';
     }
@@ -3396,12 +3416,51 @@ function saveHordeKey() {
 // ════════════════════════════════════════
 const LOCAL_MODE_LABEL = { auto:'自動', always:'常に使う', off:'OFF' };
 function getLocalMode() { try { return LOCAL_MODE_LABEL[localStorage.getItem('lg_local')] ? localStorage.getItem('lg_local') : 'auto'; } catch(e) { return 'auto'; } }
-function setLocalMode(m) {
+function setLocalMode(m, user) {
   if(!LOCAL_MODE_LABEL[m]) m = 'auto';
+  if(user) lsSet(LOCAL_CRASH_KEY, null);
   try { localStorage.setItem('lg_local', m); } catch(e){}
   document.querySelectorAll('#localModeRow .quality-btn').forEach(b => b.classList.toggle('active', b.dataset.l === m));
 }
 const localAvailable = () => !!(window.LOCAL_GEN && LOCAL_GEN.isReady());
+
+// ── 強制終了（メモリ不足でページごと落ちる）への備え ──
+//   実行中は lg_local_run に段階を記録。次回起動時に残っていたら「落ちた」と判断し、
+//   1回目: 軽量モデル＋小さいサイズで再挑戦 ／ 2回連続: 端末内生成を一時停止（設定で再開）
+const LOCAL_RUN_KEY = 'lg_local_run', LOCAL_CRASH_KEY = 'lg_local_crash', SR_RUN_KEY = 'lg_sr_run';
+const lsGet = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch(e){} };
+function localCrashCount() { return parseInt(lsGet(LOCAL_CRASH_KEY) || '0', 10) || 0; }
+function localCrashPaused() { return localCrashCount() >= 2; }
+function localRunMark(phase, safe) { lsSet(LOCAL_RUN_KEY, JSON.stringify({ t: Date.now(), phase, safe: !!(safe.tier || safe.size) })); }
+function localRunClear(ok) { lsSet(LOCAL_RUN_KEY, null); if(ok) lsSet(LOCAL_CRASH_KEY, null); }
+function localSafeOptions() {
+  if(localCrashCount() < 1) return {};
+  return { tier: LOCAL_SAFE.tier, size: Object.assign({}, LOCAL_SAFE.size) };   // 軽量モデルが未保存なら保存済みのモデルで（LOCAL_GEN 側で判断）
+}
+const LOCAL_SAFE = { tier: 'S', size: { w: 384, h: 576 } };
+const LOCAL_PHASE_LABEL = { start: '準備', 'text_encoder:load': '文章部品の読込', text: '文章の解析',
+  'unet:load': '描画部品の読込', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', vae: '仕上げ' };
+function checkLocalCrash() {
+  const raw = lsGet(LOCAL_RUN_KEY);
+  if(raw) {
+    lsSet(LOCAL_RUN_KEY, null);
+    let r = {}; try { r = JSON.parse(raw) || {}; } catch(e){}
+    if(Date.now() - (r.t || 0) < 3 * 3600e3) {
+      const n = localCrashCount() + 1;
+      lsSet(LOCAL_CRASH_KEY, String(n));
+      const at = LOCAL_PHASE_LABEL[r.phase] || r.phase || '?';
+      console.warn('[LGO] 端末内生成中に強制終了を検知:', r);
+      showToast(n >= 2
+        ? `端末内生成が「${at}」で続けて強制終了したため一時停止しました（設定から再開できます）`
+        : `前回、端末内生成が「${at}」で強制終了しました。次回は軽い設定で試します`);
+    }
+  }
+  if(lsGet(SR_RUN_KEY)) {            // AI超解像中に落ちた → AI超解像を切る
+    lsSet(SR_RUN_KEY, null);
+    if(getAiSrEnabled()) { setAiSrEnabled(false); showToast('前回、AI超解像中に強制終了したため AI超解像をOFFにしました'); }
+  }
+}
 const fmtGB = b => (b / 1073741824).toFixed(b >= 1073741824 * 10 ? 0 : 2) + 'GB';
 let _localDl = null;   // ダウンロード中のモデル id
 
@@ -3422,6 +3481,8 @@ async function refreshLocalStatus() {
   el.innerHTML = (saved.length
       ? `✅ 保存済み: ${saved.map(([, t]) => `${esc(t.short)}（${fmtGB(t.bytes)}）`).join('・')}`
       : '⬜ モデル未保存（ダウンロードすると通信なしで生成できます）')
+    + (localCrashPaused() ? '<br>⏸ 強制終了が続いたため一時停止中（上のボタンを押すと再開）'
+       : localCrashCount() ? '<br>🛟 前回強制終了したため、軽い設定（軽量モデル・384×576）で生成します' : '')
     + `<br><span style="color:var(--muted)">端末の空き容量: ${st.quota ? fmtGB(Math.max(0, st.quota - st.usage)) : '不明'}${st.persisted ? '' : '（Safariが自動削除する場合あり）'}</span>`;
   btnM.disabled = st.tiers.M.ready; btnM.textContent = st.tiers.M.ready ? '✅ 標準モデル保存済み' : '⬇ 標準モデル（約0.95GB）';
   btnS.disabled = st.tiers.S.ready; btnS.textContent = st.tiers.S.ready ? '✅ 軽量モデル保存済み' : '⬇ 軽量（約0.60GB）';
@@ -3523,6 +3584,7 @@ async function init() {
   setImgQuality(getImgQuality());
   setPollinModel(getPollinModel());
 
+  checkLocalCrash();
   if(window.LOCAL_GEN) LOCAL_GEN.status().catch(() => {});   // 端末内生成モデルの保存状況
   // 暦は端末内の天文計算で完結するため、通信を待たずに即描画できる
   try { localStorage.removeItem('lgo_cal_v1'); } catch(e){}   // 旧・外部暦キャッシュの掃除

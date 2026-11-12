@@ -102,6 +102,8 @@ const X = [
 ];
 STEPS.push({ id: 'v0', title: '7. 部品の版と Worker の確認', run: stepProbe });
 X.forEach((x, i) => STEPS.push({ id: x.id, title: `${8 + i}. ${x.t}`, run: s => stepDiag(s, x), reloadBefore: true, x }));
+const GEN = { tier: 'S', size: Q.get('sizes') ? SZ : [448, 640], steps: Q.get('sizes') ? 2 : 18 };
+STEPS.push({ id: 'x7', title: `${8 + X.length}. 本番どおりの生成（軽量 ${GEN.size.join('×')}・${GEN.steps}工程）`, run: stepGen, reloadBefore: true });
 let state = load() || { v: 1, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
@@ -299,6 +301,36 @@ async function stepProbe(s) {
   s.summary = !LOCAL_GEN.diagRun ? '古い版のままです（アプリを開き直してください）' : p.ok ? `OK（版 ${LOCAL_GEN.version}）` : '不可: ' + p.reason;
   if (!LOCAL_GEN.diagRun) throw new Error('古い版の部品が読み込まれています。アプリを2回開き直してから「最初からやり直す」を押してください');
 }
+// 14. アプリと同じ生成（LOCAL_GEN.generate）
+const PH = { 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章部品の作成完了', text: '文章の解析',
+  'unet:load': '描画部品の読込', 'unet:run': '描画部品の作成完了→描画開始', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ部品の作成完了', vae: '仕上げ' };
+async function stepGen(s) {
+  await useLocalGen();
+  const st = await LOCAL_GEN.status();
+  const tier = st.tiers[GEN.tier] && st.tiers[GEN.tier].ready ? GEN.tier : state.tier;
+  const [w, h] = GEN.size;
+  let last = '';
+  mark(s, `${w}×${h}・${GEN.steps}工程 生成開始`); await sleep(100);
+  const t0 = performance.now();
+  const r = await LOCAL_GEN.generate({ prompt: PROMPT, negative: NEG, seed: 1234, tier, size: { w, h }, steps: GEN.steps,
+    onLog: text => mark(s, '［' + text + '］'),
+    onProgress: (ph, f) => {
+      const k = ph + Math.round(f * 100); if (k === last) return; last = k;
+      if (ph === 'unet' && f < 1 && Math.round(f * GEN.steps) % 6) return;   // 記録を間引く
+      mark(s, ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : ''));
+    } });
+  if (r.width !== w) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);
+  mark(s, `完了（全体 ${((performance.now() - t0) / 1000).toFixed(1)}秒・1工程 ${(r.msPerStep / 1000).toFixed(1)}秒）`);
+  try {   // 記録を圧迫しないよう、ごく小さいJPEGで目視確認用に残す
+    const bm = await createImageBitmap(r.blob), cv = document.createElement('canvas');
+    cv.width = 72; cv.height = Math.round(72 * r.height / r.width);
+    cv.getContext('2d').drawImage(bm, 0, 0, cv.width, cv.height);
+    s.thumb = cv.toDataURL('image/jpeg', 0.7);
+  } catch (e) {}
+  await sleep(2000);
+  mark(s, '完了後 2秒 生存');
+  s.ok = true; s.summary = `OK（1工程 ${(r.msPerStep / 1000).toFixed(1)}秒・全体 ${(r.ms / 1000).toFixed(0)}秒）`;
+}
 // 8〜13. 部品を選んで動かす
 async function stepDiag(s, x) {
   await useLocalGen();
@@ -324,7 +356,7 @@ function verdict() {
   if (bad('gpuB') || bad('gpuC')) return '連続で送ると落ちる → 区切って送れば回避できる見込み（部品を分割して読み込む修正で対応可）';
   if (bad('ort')) return '転送は問題なし → onnxruntime 内部（最適化処理など）で落ちている';
   const at = id => !st[id] ? '未実施' : st[id].status === 'crashed' ? `💥（${st[id].mark || '?'}）` : st[id].status === 'error' ? `⚠（${st[id].error}）` : `○ ${st[id].summary || ''}`;
-  const lines = [`版: ${st.v0 ? st.v0.summary : '未確認'}`, ...X.map(x => `${x.t}: ${at(x.id)}`)];
+  const lines = [`版: ${st.v0 ? st.v0.summary : '未確認'}`, ...X.map(x => `${x.t}: ${at(x.id)}`), `本番どおりの生成: ${at('x7')}`];
   const ok = id => st[id] && st[id].status === 'done', ng = id => st[id] && st[id].status === 'crashed';
   const msg = [];
   if (st.x1 && st.x1.data) msg.push('文章部品の出力: ' + (st.x1.data['文章部品の出力'] || '—'));
@@ -333,7 +365,8 @@ function verdict() {
   else if (ok('x2') && ng('x3') && ng('x4')) msg.push('本物のノイズ・時刻を入れると落ちる → 入力の値が原因');
   else if (ok('x2') && ok('x3') && ng('x5')) msg.push('文章部品を先に動かすと落ちる → 部品の順番（Safari側の状態）が原因');
   else if (ok('x5') && ng('x6')) msg.push('文章部品の後に本物の入力を入れた時だけ落ちる');
-  else if (X.every(x => ok(x.id))) msg.push('すべて成功 → 通しの生成の別の要因（仕上げ部品・工程数など）');
+  if (ok('x7')) msg.push('本番どおりの生成に成功 → アプリでも端末内生成が使えます（⚙設定で「常に使う」を押すと一時停止が解除されます）');
+  else if (X.every(x => ok(x.id)) && ng('x7')) msg.push('切り分けは全部成功、本番どおりの生成で強制終了 → 仕上げ部品か工程数が原因');
   return lines.join('\n') + (msg.length ? '\n→ ' + msg.join('\n→ ') : '');
 }
 

@@ -14,6 +14,7 @@
 | `assets/splash/` | iOS起動スプラッシュ。ファイル名は `<幅>x<高>.png` |
 | `assets/ai/` | 端末内AI超解像（TensorFlow.js・Real-CUGAN/Real-ESRGAN）と端末内生成（onnxruntime-web）。ライセンス同梱 |
 | `diag.html` | 実機診断（端末内生成が動くかを判定） |
+| `diag-gen.html` | 端末内生成テスト（読み込みのどの段階で落ちるかを記録） |
 
 ## 占術エンジン
 

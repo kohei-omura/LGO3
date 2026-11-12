@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0b1a">
+<title>🔬 端末内生成テスト — 運気の女神</title>
+<style>
+  :root { --ink:#0d0b1a; --card:#1a1730; --border:rgba(255,255,255,.12); --gold:#e8c96a; --rose:#f49aad; --violet:#a78bfa; --green:#6ee7b7; --text:#f0eaff; --muted:#8b80ac; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ink); color: var(--text); font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; line-height: 1.6; -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: calc(20px + env(safe-area-inset-top)) 16px calc(60px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 1.25rem; color: var(--gold); margin-bottom: 6px; }
+  .lead { font-size: .8rem; color: var(--muted); margin-bottom: 12px; }
+  .warn { font-size: .76rem; background: rgba(244,154,173,.1); border: 1px solid rgba(244,154,173,.35); color: var(--rose); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; margin-bottom: 14px; }
+  button { flex: 1; padding: 12px 8px; border-radius: 12px; border: 1px solid rgba(167,139,250,.45); background: rgba(167,139,250,.16); color: var(--text); font-size: .85rem; font-weight: 700; cursor: pointer; }
+  button.sub { flex: 0 0 auto; background: none; border-color: var(--border); color: var(--muted); font-weight: 400; font-size: .74rem; }
+  button:disabled { opacity: .45; }
+  #verdict { border-radius: 14px; padding: 14px; margin-bottom: 14px; border: 1px solid var(--border); background: var(--card); display: none; }
+  #verdict h2 { font-size: 1rem; color: var(--gold); margin-bottom: 8px; }
+  .tier { font-size: .8rem; padding: 6px 0; border-top: 1px solid var(--border); }
+  .tier b { color: var(--text); }
+  .tier .why { display: block; font-size: .7rem; color: var(--muted); }
+  .sec { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; margin-bottom: 9px; }
+  .sec h3 { font-size: .84rem; display: flex; justify-content: space-between; gap: 8px; }
+  .sec h3 span { font-weight: 400; font-size: .74rem; color: var(--muted); white-space: nowrap; }
+  .sec .body { font-size: .72rem; color: #cfc6ea; margin-top: 6px; white-space: pre-wrap; word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
+  .sec .body:empty { display: none; }
+  .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); margin-top: 8px; overflow: hidden; display: none; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--violet), var(--gold)); }
+  .ok { color: var(--green); } .ng { color: var(--rose); } .run { color: var(--gold); }
+  #copyBtn { width: 100%; margin: 6px 0 10px; display: none; }
+  #toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: rgba(20,17,40,.96); border: 1px solid rgba(167,139,250,.4); border-radius: 12px; padding: 9px 16px; font-size: .78rem; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  a { color: var(--violet); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔬 端末内生成テスト</h1>
+  <p class="lead">端末内生成が「描画部品の読込」で落ちる原因を、読み込みを細かく分けて調べます。所要時間は2〜5分です。<br>
+    使うモデル: <b id="tierName">確認中…</b></p>
+  <div class="warn">⚠ 途中で画面が真っ白になったり、勝手に再読み込みされることがあります（それが調べたい現象です）。<br>
+    「問題が繰り返し起きました」と出ても、<b>このページを開き直せば続きから自動で再開</b>します。全部の手順が終わるまで、開き直しを繰り返してください。<br>
+    他のアプリを閉じてから実行してください。通信は使いません。</div>
+  <div class="row">
+    <button id="startBtn">▶ テストを開始</button>
+    <button id="resetBtn" class="sub">最初からやり直す</button>
+  </div>
+  <div id="verdict"></div>
+  <div id="sections"></div>
+  <button id="copyBtn">📋 結果をコピー</button>
+  <p class="lead"><a href="index.html">← アプリに戻る</a>　<a href="diag.html">📱 実機診断（基本）</a></p>
+</div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ════════════════════════════════════════════════════════════
+   端末内生成テスト: unet（最大の部品）の読み込みのどこで落ちるかを測る
+   - アプリが保存したモデル（OPFS: lgo-localgen/<tier>/unet.onnx）を使う。通信なし
+   - 手順ごと・手順内の段階ごとに localStorage へ記録 → 落ちても開き直せば
+     「どの手順の、どの段階（何MB目）で落ちたか」が残り、次の手順から再開する
+   - GPU転送は3方式を比べる
+       A: writeBuffer＋64MBごとに完了待ち（最も穏やか）
+       B: writeBuffer・待ちなし
+       C: onnxruntime と同じ方式（一時バッファを作って写す・待ちなし）
+   - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm
+   ════════════════════════════════════════════════════════════ */
+const KEY = 'lgo_diag_gen_v1';
+const MB = 1048576;
+const Q = new URLSearchParams(location.search);
+const EP = Q.get('ep') || 'webgpu';
+const ROOT_DIR = 'lgo-localgen';
+const COMP = 'unet';
+
+const STEPS = [
+  { id: 'env',     title: '1. 準備（モデルと実行部品の確認）',          run: stepEnv },
+  { id: 'read',    title: '2. 読み込みのみ（端末の保存領域→メモリ）',    run: stepRead,   risky: true },
+  { id: 'gpuA',    title: '3. GPU転送 A（区切って完了を待つ）',          run: s => stepGpu(s, 'A'), risky: true },
+  { id: 'gpuB',    title: '4. GPU転送 B（待たずに連続）',                run: s => stepGpu(s, 'B'), risky: true },
+  { id: 'gpuC',    title: '5. GPU転送 C（onnxruntime と同じ方式）',      run: s => stepGpu(s, 'C'), risky: true },
+  { id: 'ort',     title: '6. 本番と同じ読込（onnxruntime）',            run: stepOrt,    risky: true },
+];
+
+let state = load() || { v: 1, inProgress: false, steps: {} };
+function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const $ = id => document.getElementById(id);
+const fmtMB = mb => mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : Math.round(mb) + ' MB';
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.opacity = '1'; setTimeout(() => { t.style.opacity = '0'; }, 2200); }
+function withTimeout(p, ms, label) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(label + ' が' + ms / 1000 + '秒以内に終わりませんでした')), ms))]);
+}
+// 段階の記録（落ちた時に「どこまで進んだか」を残す）
+function mark(s, text, extra) {
+  s.mark = text; s.t = Math.round(performance.now() - (s._t0 || 0));
+  (s.log = s.log || []).push(`${(s.t / 1000).toFixed(1)}秒 ${text}`);
+  if (extra) Object.assign(s, extra);
+  save(); render();
+}
+
+async function dirOf(sub) {
+  let d = await navigator.storage.getDirectory();
+  for (const p of [ROOT_DIR, ...sub.split('/')].filter(Boolean)) d = await d.getDirectoryHandle(p);
+  return d;
+}
+async function savedFile(tier, name) {
+  try { return await (await (await dirOf(tier)).getFileHandle(name)).getFile(); } catch (e) { return null; }
+}
+// 使うモデル: 指定があればそれ、なければ軽量(S)→標準(M)
+async function pickTier() {
+  if (state.tier) return state.tier;
+  const want = Q.get('tier');
+  for (const t of want ? [want] : ['S', 'M']) if (await savedFile(t, COMP + '.onnx')) return (state.tier = t);
+  return null;
+}
+const TIER_LABEL = { S: '軽量（4bit）', M: '標準（fp16）' };
+async function readUnet(s) {
+  const f = await savedFile(state.tier, COMP + '.onnx');
+  if (!f) throw new Error('モデルが見つかりません（アプリの設定で保存してください）');
+  mark(s, `ファイル読み込み開始（${fmtMB(f.size / MB)}）`);
+  const t0 = performance.now();
+  const buf = new Uint8Array(await f.arrayBuffer());
+  s.readSec = ((performance.now() - t0) / 1000).toFixed(1);
+  mark(s, `ファイル読み込み完了（${s.readSec}秒）`);
+  return buf;
+}
+async function getDevice() {
+  if (!navigator.gpu) throw new Error('WebGPU に対応していません');
+  const ad = await withTimeout(navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }), 10000, 'GPUの取得');
+  if (!ad) throw new Error('GPU を取得できません');
+  const dev = await ad.requestDevice({ requiredLimits: { maxBufferSize: ad.limits.maxBufferSize, maxStorageBufferBindingSize: ad.limits.maxStorageBufferBindingSize } });
+  return dev;
+}
+
+// ════════════════ 1. 準備 ════════════════
+async function stepEnv(s) {
+  const tier = await pickTier();
+  if (!tier) throw new Error('端末内生成のモデルが保存されていません。アプリの ⚙設定 →「📴 端末内生成」で保存してから実行してください');
+  s.data = { tier: tier + ' ' + TIER_LABEL[tier] };
+  for (const c of ['text_encoder', 'unet', 'vae_decoder']) {
+    const f = await savedFile(tier, c + '.onnx');
+    s.data[c] = f ? fmtMB(f.size / MB) : 'なし';
+  }
+  const g = await fetch(`assets/ai/graphs/${tier}/${COMP}.onnx`);
+  s.data.graph = g.ok ? `OK（${Math.round((await g.arrayBuffer()).byteLength / 1024)}KB）` : 'HTTP ' + g.status;
+  try { const ad = await navigator.gpu.requestAdapter(); s.data.maxBufferSize = ad ? fmtMB(ad.limits.maxBufferSize / MB) : 'GPUなし'; } catch (e) { s.data.maxBufferSize = '取得失敗'; }
+  s.ok = g.ok;
+  s.summary = `${TIER_LABEL[tier]}・unet ${s.data.unet}`;
+}
+
+// ════════════════ 2. 読み込みのみ ════════════════
+async function stepRead(s) {
+  let buf = await readUnet(s);
+  let sum = 0; for (let i = 0; i < buf.length; i += 4096) sum = (sum + buf[i]) | 0;   // 実際に触って確定させる
+  mark(s, '全体に触れて確認');
+  await sleep(1500);
+  buf = null;
+  await sleep(1500);
+  s.ok = true; s.summary = `OK（読み込み ${s.readSec}秒）`;
+}
+
+// ════════════════ 3〜5. GPU転送 ════════════════
+//   ファイルを読み込んだ後、16MBずつGPUへ送る（unet の重み1個は最大でも十数MB）
+async function stepGpu(s, mode) {
+  let buf = await readUnet(s);
+  const dev = await getDevice();
+  let lost = null; dev.lost.then(i => { lost = (i && i.message) || 'GPUが切断されました'; });
+  const PIECE = 16 * MB, total = buf.length, dsts = [];
+  const DST_SIZE = 256 * MB;        // 送り先は 256MB ずつのバッファにまとめる
+  let dst = null, dstOff = 0;
+  mark(s, `GPU転送開始（方式${mode}）`, { reachedMB: 0, capMB: Math.round(total / MB) });
+  dev.pushErrorScope('out-of-memory');
+  try {
+    for (let off = 0; off < total; off += PIECE) {
+      const n = Math.min(PIECE, total - off), n4 = Math.ceil(n / 16) * 16;
+      if (!dst || dstOff + n4 > DST_SIZE) {
+        dst = dev.createBuffer({ size: DST_SIZE, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+        dsts.push(dst); dstOff = 0;
+      }
+      const part = buf.subarray(off, off + n);
+      if (mode === 'C') {             // onnxruntime と同じ: 一時バッファを作って写し、コピー命令を送って即破棄
+        const st = dev.createBuffer({ mappedAtCreation: true, size: n4, usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC });
+        new Uint8Array(st.getMappedRange()).set(part);
+        st.unmap();
+        const enc = dev.createCommandEncoder();
+        enc.copyBufferToBuffer(st, 0, dst, dstOff, n4);
+        dev.queue.submit([enc.finish()]);
+        st.destroy();
+      } else {
+        dev.queue.writeBuffer(dst, dstOff, buf.buffer, buf.byteOffset + off, n & ~3);   // 大きさは4の倍数
+      }
+      dstOff += n4;
+      const done = Math.round((off + n) / MB);
+      if (done % 64 < 16 || off + n >= total) {
+        s.reachedMB = done; mark(s, `${done}MB 送信`);
+        if (mode === 'A') await withTimeout(dev.queue.onSubmittedWorkDone(), 30000, 'GPUへの書き込み');
+      }
+      if (lost) throw new Error('GPUが切断されました: ' + lost);
+    }
+    mark(s, '送信完了・GPUの処理待ち');
+    await withTimeout(dev.queue.onSubmittedWorkDone(), 60000, 'GPUへの書き込み');
+    const oom = await dev.popErrorScope();
+    if (oom) throw new Error('GPUメモリ不足: ' + oom.message);
+    mark(s, 'GPUの処理完了');
+    buf = null;
+    await sleep(1500);
+    mark(s, '元データを手放した後も生存');
+    s.ok = true; s.summary = `OK（${fmtMB(total / MB)} 転送）`;
+  } finally {
+    for (const b of dsts) { try { b.destroy(); } catch (e) {} }
+    try { dev.destroy(); } catch (e) {}
+    await sleep(1000);
+  }
+}
+
+// ════════════════ 6. 本番と同じ読込 ════════════════
+function loadScript(src) {
+  return new Promise((res, rej) => { const e = document.createElement('script'); e.src = src; e.onload = res; e.onerror = () => rej(new Error('読み込めません: ' + src)); document.head.appendChild(e); });
+}
+async function stepOrt(s) {
+  mark(s, '実行部品（onnxruntime）の読み込み');
+  if (!window.ort) await loadScript('assets/ai/ort/ort.webgpu.min.js');
+  if (!window.LocalGenCore) await loadScript('assets/ai/local-gen-core.js');
+  ort.env.wasm.wasmPaths = new URL('assets/ai/ort/', location.href).href;
+  ort.env.wasm.numThreads = 1; ort.env.logLevel = 'error';
+  const g = await fetch(`assets/ai/graphs/${state.tier}/${COMP}.onnx`);
+  const graph = new Uint8Array(await g.arrayBuffer());
+  let data = await readUnet(s);
+  const opts = { executionProviders: [EP], graphOptimizationLevel: 'all', logSeverityLevel: 3,
+                 freeDimensionOverrides: { batch_size: 1, height: 16, width: 16, sequence_length: 77 },
+                 externalData: [{ path: COMP + '.onnx', data }] };
+  mark(s, `セッション作成開始（${EP}）`);
+  const t0 = performance.now();
+  let sess = await ort.InferenceSession.create(graph, opts);
+  data = null; opts.externalData = null;
+  mark(s, `セッション作成完了（${((performance.now() - t0) / 1000).toFixed(1)}秒）`);
+  await sleep(1500);
+  mark(s, '作成後 1.5秒 生存');
+  // 小さいサイズ（128×128）で1回だけ実行
+  const h16 = n => { const a = new Uint16Array(n); for (let i = 0; i < n; i++) a[i] = LocalGenCore.f32ToF16Bits(Math.sin(i * 0.37) * 0.5); return a; };
+  const tt = (n, dims) => new ort.Tensor('float16', h16(n), dims);
+  mark(s, '試し実行（128×128）開始');
+  const t1 = performance.now();
+  const out = await sess.run({ sample: tt(4 * 16 * 16, [1, 4, 16, 16]), timestep: new ort.Tensor('float16', new Uint16Array([LocalGenCore.f32ToF16Bits(500)]), []),
+                               encoder_hidden_states: tt(77 * 768, [1, 77, 768]) });
+  const o = LocalGenCore.toF32(out[sess.outputNames[0]].data);
+  let bad = 0; for (const v of o) if (!Number.isFinite(v)) bad++;
+  mark(s, `試し実行完了（${((performance.now() - t1) / 1000).toFixed(1)}秒・異常値 ${bad}個）`);
+  await sess.release(); sess = null;
+  s.ok = bad === 0; s.summary = bad ? `出力に異常値 ${bad}個` : 'OK（作成・実行とも成功）';
+}
+
+// ════════════════ 判定 ════════════════
+const fin = s => s && (s.status === 'done' || s.status === 'crashed' || s.status === 'error');
+const allDone = () => STEPS.every(d => fin(state.steps[d.id]));
+function verdict() {
+  const st = state.steps, bad = id => st[id] && (st[id].status === 'crashed' || st[id].status === 'error' || st[id].ok === false);
+  if (bad('env')) return '準備に失敗（モデル未保存など）';
+  if (bad('read')) return '読み込みだけで落ちる → ファイルを分けて少しずつ読む必要あり';
+  if (bad('gpuA')) return '区切って送っても落ちる → GPUへ送った量そのものが上限超え（より小さいモデルが必要）';
+  if (bad('gpuB') || bad('gpuC')) return '連続で送ると落ちる → 区切って送れば回避できる見込み（部品を分割して読み込む修正で対応可）';
+  if (bad('ort')) return '転送は問題なし → onnxruntime 内部（最適化処理など）で落ちている';
+  return 'すべて成功 → 生成の別の段階を調べる必要あり';
+}
+
+// ════════════════ 表示 ════════════════
+const ICON = { done: '✅', error: '⚠️', crashed: '💥', running: '⏳' };
+function bodyText(s) {
+  const log = (s.log || []).join('\n');
+  const data = s.data ? Object.entries(s.data).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n' : '';
+  if (s.status === 'crashed') return `💥 この手順の途中でページが強制終了されました\n最後に記録された段階: ${s.mark || '開始直後'}\n${log}`;
+  if (s.status === 'error') return `エラー: ${s.error}\n最後の段階: ${s.mark || '—'}\n${log}`;
+  return data + log;
+}
+function render() {
+  $('sections').innerHTML = STEPS.map(d => {
+    const s = state.steps[d.id];
+    const right = !s ? '未実施' : s.status === 'running' ? `<span class="run">${esc(s.mark || '実行中…')}</span>`
+      : `${ICON[s.status] || ''} ${esc(s.summary || (s.status === 'crashed' ? '強制終了' : ''))}`;
+    const pct = s && s.status === 'running' && s.capMB ? Math.round((s.reachedMB || 0) / s.capMB * 100) : 0;
+    return `<div class="sec"><h3>${d.title}<span>${right}</span></h3>
+      <div class="bar" style="display:${s && s.status === 'running' && s.capMB ? 'block' : 'none'}"><i style="width:${pct}%"></i></div>
+      <div class="body">${s && s.status !== 'running' ? esc(bodyText(s)) : ''}</div></div>`;
+  }).join('');
+  $('tierName').textContent = state.tier ? `${state.tier} ${TIER_LABEL[state.tier]}` : '（開始時に決定）';
+  const v = $('verdict');
+  if (allDone()) {
+    v.style.display = 'block';
+    v.innerHTML = `<h2>結果</h2><div class="tier">${esc(verdict())}</div>`;
+    $('copyBtn').style.display = 'block';
+  } else { v.style.display = 'none'; $('copyBtn').style.display = 'none'; }
+  $('startBtn').disabled = state.inProgress || allDone();
+  $('startBtn').textContent = state.inProgress ? '⏳ テスト中…' : allDone() ? '✔ テスト済み' : '▶ テストを開始';
+}
+function reportText() {
+  const lines = ['【LGO3 端末内生成テスト】 ' + new Date().toLocaleString('ja-JP'),
+    `モデル: ${state.tier} ${TIER_LABEL[state.tier] || ''} / 実行: ${EP}`, `結果: ${verdict()}`, '', navigator.userAgent, ''];
+  for (const d of STEPS) {
+    const s = state.steps[d.id]; if (!s) continue;
+    lines.push(`■ ${d.title} — ${s.status === 'crashed' ? '💥強制終了' : s.status === 'error' ? 'エラー' : s.summary || ''}`, bodyText(s), '');
+  }
+  return lines.join('\n');
+}
+async function copyReport() {
+  const text = reportText();
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e2) { ta.remove(); toast('コピーできませんでした'); return; }
+    ta.remove();
+  }
+  toast('✅ 結果をコピーしました。チャットに貼り付けてください');
+}
+
+// ════════════════ 実行 ════════════════
+async function runAll() {
+  state.inProgress = true; save(); render();
+  for (const d of STEPS) {
+    const prev = state.steps[d.id];
+    if (prev && prev.status !== 'running') continue;              // 済み
+    if (prev && prev.status === 'running') { prev.status = 'crashed'; save(); render(); continue; }   // 前回ここで落ちた
+    if (d.id !== 'env' && state.steps.env && state.steps.env.status !== 'done') {   // 準備失敗なら以降は実施しない
+      state.steps[d.id] = { status: 'error', error: '準備に失敗したため未実施', summary: '未実施' }; save(); continue;
+    }
+    const s = state.steps[d.id] = { status: 'running', _t0: performance.now() };
+    mark(s, '開始');
+    try {
+      await d.run(s);
+      s.status = 'done';
+    } catch (e) { s.status = 'error'; s.error = String(e && e.message || e); s.summary = 'エラー'; }
+    delete s._t0; save(); render();
+    await sleep(800);
+  }
+  state.inProgress = false; save(); render();
+}
+$('startBtn').onclick = () => { if (!state.inProgress) runAll(); };
+$('resetBtn').onclick = () => { try { localStorage.removeItem(KEY); } catch (e) {} location.replace(location.pathname + location.search); };
+$('copyBtn').onclick = copyReport;
+render();
+if (state.inProgress) { toast('前回の続きから再開します'); setTimeout(runAll, 1200); }
+</script>
+</body>
+</html>

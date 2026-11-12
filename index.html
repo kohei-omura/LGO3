@@ -3483,6 +3483,7 @@ async function refreshLocalStatus() {
       : '⬜ モデル未保存（ダウンロードすると通信なしで生成できます）')
     + (localCrashPaused() ? '<br>⏸ 強制終了が続いたため一時停止中（上のボタンを押すと再開）'
        : localCrashCount() ? '<br>🛟 前回強制終了したため、軽い設定（軽量モデル・384×576）で生成します' : '')
+    + (saved.length ? '<br><a href="diag-gen.html" style="color:var(--violet)">🔬 端末内生成テスト（落ちる原因を調べる）</a>' : '')
     + `<br><span style="color:var(--muted)">端末の空き容量: ${st.quota ? fmtGB(Math.max(0, st.quota - st.usage)) : '不明'}${st.persisted ? '' : '（Safariが自動削除する場合あり）'}</span>`;
   btnM.disabled = st.tiers.M.ready; btnM.textContent = st.tiers.M.ready ? '✅ 標準モデル保存済み' : '⬇ 標準モデル（約0.95GB）';
   btnS.disabled = st.tiers.S.ready; btnS.textContent = st.tiers.S.ready ? '✅ 軽量モデル保存済み' : '⬇ 軽量（約0.60GB）';

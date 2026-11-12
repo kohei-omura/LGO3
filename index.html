@@ -2880,6 +2880,8 @@ function generateImage(promptData, seed) {
       onProgress: (ph, f) => {
         if(ph !== lastPh) { lastPh = ph; localRunMark(ph, safe); }       // どの段階で落ちたかを記録
         setStage((/:load$/.test(ph) ? '📴 端末内: 部品を読み込み中…'
+                : ph === 'unet:run' ? '📴 端末内で描画中… 0%'
+                : /:run$/.test(ph) ? '📴 端末内: ' + (ph[0] === 't' ? '文章を解析中…' : '仕上げ中…')
                 : ph === 'text' ? '📴 端末内: 文章を解析中…'
                 : ph === 'unet' ? `📴 端末内で描画中… ${Math.round(f * 100)}%`
                 :                 '📴 端末内: 仕上げ中…') + tag);
@@ -3439,8 +3441,8 @@ function localSafeOptions() {
   return { tier: LOCAL_SAFE.tier, size: Object.assign({}, LOCAL_SAFE.size) };   // 軽量モデルが未保存なら保存済みのモデルで（LOCAL_GEN 側で判断）
 }
 const LOCAL_SAFE = { tier: 'S', size: { w: 384, h: 576 } };
-const LOCAL_PHASE_LABEL = { start: '準備', 'text_encoder:load': '文章部品の読込', text: '文章の解析',
-  'unet:load': '描画部品の読込', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', vae: '仕上げ' };
+const LOCAL_PHASE_LABEL = { start: '準備', 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章の解析', text: '文章の解析',
+  'unet:load': '描画部品の読込', 'unet:run': '描画（1工程目）', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ', vae: '仕上げ' };
 function checkLocalCrash() {
   const raw = lsGet(LOCAL_RUN_KEY);
   if(raw) {

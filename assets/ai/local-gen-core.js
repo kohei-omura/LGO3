@@ -219,6 +219,7 @@
     if (src && src.model) { opts = Object.assign({}, opts, { externalData: src.externalData }); src = src.model; }
     let s = await env.ort.InferenceSession.create(src, opts);
     src = null; opts = null;                       // 重みのコピーを手放して GC に回収させる
+    if (prog) prog(comp + ':run', 0);              // 作成完了 → ここから実行（落ちた段階の切り分け用）
     try { return await fn(s); }
     finally { try { await s.release(); } catch (e) {} s = null; }
   }

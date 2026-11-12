@@ -39,7 +39,7 @@
 <body>
 <div class="wrap">
   <h1>🔬 端末内生成テスト</h1>
-  <p class="lead">端末内生成が「描画部品の読込」で落ちる原因を、読み込みを細かく分けて調べます。所要時間は2〜5分です。<br>
+  <p class="lead">端末内生成が「描画部品の読込」で落ちる原因を、読み込みを細かく分けて調べます。所要時間は3〜8分です。<br>
     使うモデル: <b id="tierName">確認中…</b></p>
   <div class="warn">⚠ 途中で画面が真っ白になったり、勝手に再読み込みされることがあります（それが調べたい現象です）。<br>
     「問題が繰り返し起きました」と出ても、<b>このページを開き直せば続きから自動で再開</b>します。全部の手順が終わるまで、開き直しを繰り返してください。<br>
@@ -66,7 +66,7 @@
        A: writeBuffer＋64MBごとに完了待ち（最も穏やか）
        B: writeBuffer・待ちなし
        C: onnxruntime と同じ方式（一時バッファを作って写す・待ちなし）
-   - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm
+   - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=256x384,320x448
    ════════════════════════════════════════════════════════════ */
 const KEY = 'lgo_diag_gen_v1';
 const MB = 1048576;
@@ -83,6 +83,9 @@ const STEPS = [
   { id: 'gpuC',    title: '5. GPU転送 C（onnxruntime と同じ方式）',      run: s => stepGpu(s, 'C'), risky: true },
   { id: 'ort',     title: '6. 本番と同じ読込（onnxruntime）',            run: stepOrt,    risky: true },
 ];
+// 描画サイズを段階的に大きくする（注意機構の作業メモリは画素数の2乗で増える）
+const SIZES = Q.get('sizes') ? Q.get('sizes').split(',').map(x => x.split('x').map(Number)) : [[256, 384], [320, 448], [384, 576], [448, 640]];
+SIZES.forEach(([w, h], i) => STEPS.push({ id: 'sz' + i, title: `${7 + i}. 描画 ${w}×${h}（1工程＝2回実行）`, run: s => stepSize(s, w, h), size: true, w, h }));
 
 let state = load() || { v: 1, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
@@ -222,37 +225,69 @@ async function stepGpu(s, mode) {
 function loadScript(src) {
   return new Promise((res, rej) => { const e = document.createElement('script'); e.src = src; e.onload = res; e.onerror = () => rej(new Error('読み込めません: ' + src)); document.head.appendChild(e); });
 }
-async function stepOrt(s) {
+async function prepOrt(s) {
   mark(s, '実行部品（onnxruntime）の読み込み');
   if (!window.ort) await loadScript('assets/ai/ort/ort.webgpu.min.js');
   if (!window.LocalGenCore) await loadScript('assets/ai/local-gen-core.js');
   ort.env.wasm.wasmPaths = new URL('assets/ai/ort/', location.href).href;
   ort.env.wasm.numThreads = 1; ort.env.logLevel = 'error';
+}
+async function createUnet(s, lh, lw) {
   const g = await fetch(`assets/ai/graphs/${state.tier}/${COMP}.onnx`);
   const graph = new Uint8Array(await g.arrayBuffer());
   let data = await readUnet(s);
   const opts = { executionProviders: [EP], graphOptimizationLevel: 'all', logSeverityLevel: 3,
-                 freeDimensionOverrides: { batch_size: 1, height: 16, width: 16, sequence_length: 77 },
+                 freeDimensionOverrides: { batch_size: 1, height: lh, width: lw, sequence_length: 77 },
                  externalData: [{ path: COMP + '.onnx', data }] };
   mark(s, `セッション作成開始（${EP}）`);
   const t0 = performance.now();
-  let sess = await ort.InferenceSession.create(graph, opts);
+  const sess = await ort.InferenceSession.create(graph, opts);
   data = null; opts.externalData = null;
   mark(s, `セッション作成完了（${((performance.now() - t0) / 1000).toFixed(1)}秒）`);
-  await sleep(1500);
-  mark(s, '作成後 1.5秒 生存');
-  // 小さいサイズ（128×128）で1回だけ実行
+  return sess;
+}
+// 1回実行（異常値の数を返す）
+async function runUnet(sess, lh, lw) {
   const h16 = n => { const a = new Uint16Array(n); for (let i = 0; i < n; i++) a[i] = LocalGenCore.f32ToF16Bits(Math.sin(i * 0.37) * 0.5); return a; };
   const tt = (n, dims) => new ort.Tensor('float16', h16(n), dims);
-  mark(s, '試し実行（128×128）開始');
-  const t1 = performance.now();
-  const out = await sess.run({ sample: tt(4 * 16 * 16, [1, 4, 16, 16]), timestep: new ort.Tensor('float16', new Uint16Array([LocalGenCore.f32ToF16Bits(500)]), []),
+  const out = await sess.run({ sample: tt(4 * lh * lw, [1, 4, lh, lw]), timestep: new ort.Tensor('float16', new Uint16Array([LocalGenCore.f32ToF16Bits(500)]), []),
                                encoder_hidden_states: tt(77 * 768, [1, 77, 768]) });
   const o = LocalGenCore.toF32(out[sess.outputNames[0]].data);
   let bad = 0; for (const v of o) if (!Number.isFinite(v)) bad++;
+  return bad;
+}
+async function stepOrt(s) {
+  await prepOrt(s);
+  let sess = await createUnet(s, 16, 16);
+  await sleep(1500);
+  mark(s, '作成後 1.5秒 生存');
+  mark(s, '試し実行（128×128）開始');
+  const t1 = performance.now();
+  const bad = await runUnet(sess, 16, 16);
   mark(s, `試し実行完了（${((performance.now() - t1) / 1000).toFixed(1)}秒・異常値 ${bad}個）`);
   await sess.release(); sess = null;
   s.ok = bad === 0; s.summary = bad ? `出力に異常値 ${bad}個` : 'OK（作成・実行とも成功）';
+}
+// 7〜. 描画サイズ別（アプリの1工程＝条件なし・条件ありの2回実行）
+async function stepSize(s, w, h) {
+  await prepOrt(s);
+  const lh = h / 8, lw = w / 8;
+  let sess = await createUnet(s, lh, lw);
+  const ms = [];
+  let bad = 0;
+  try {
+    for (let k = 1; k <= 2; k++) {
+      mark(s, `${w}×${h} ${k}回目の実行中…`);
+      const t = performance.now();
+      bad += await runUnet(sess, lh, lw);
+      ms.push(performance.now() - t);
+      mark(s, `${k}回目 完了（${(ms[ms.length - 1] / 1000).toFixed(1)}秒）`);
+    }
+  } finally { try { await sess.release(); } catch (e) {} sess = null; }
+  await sleep(1500);
+  s.ok = bad === 0;
+  s.stepSec = ms[1] / 1000 * 2;
+  s.summary = bad ? `出力に異常値 ${bad}個` : `OK（1工程 約${s.stepSec.toFixed(1)}秒）`;
 }
 
 // ════════════════ 判定 ════════════════
@@ -265,6 +300,10 @@ function verdict() {
   if (bad('gpuA')) return '区切って送っても落ちる → GPUへ送った量そのものが上限超え（より小さいモデルが必要）';
   if (bad('gpuB') || bad('gpuC')) return '連続で送ると落ちる → 区切って送れば回避できる見込み（部品を分割して読み込む修正で対応可）';
   if (bad('ort')) return '転送は問題なし → onnxruntime 内部（最適化処理など）で落ちている';
+  const sz = STEPS.filter(d => d.size), okS = sz.filter(d => st[d.id] && st[d.id].status === 'done' && st[d.id].ok);
+  const ng = sz.find(d => bad(d.id) && !/省略/.test(st[d.id].error || ''));
+  if (ng) return `描画は ${okS.length ? okS[okS.length - 1].w + '×' + okS[okS.length - 1].h + ' まで成功、' : ''}${ng.w}×${ng.h} で失敗 → 画像サイズに応じた作業メモリが原因（描画の計算を分割する修正で対応可）`;
+  if (okS.length === sz.length) return 'どのサイズでも成功 → 文章解析・仕上げなど別の段階を調べる必要あり';
   return 'すべて成功 → 生成の別の段階を調べる必要あり';
 }
 
@@ -325,6 +364,9 @@ async function runAll() {
     const prev = state.steps[d.id];
     if (prev && prev.status !== 'running') continue;              // 済み
     if (prev && prev.status === 'running') { prev.status = 'crashed'; save(); render(); continue; }   // 前回ここで落ちた
+    if (d.size && STEPS.some(e => e.size && e.w * e.h < d.w * d.h && state.steps[e.id] && (state.steps[e.id].status === 'crashed' || state.steps[e.id].status === 'error'))) {
+      state.steps[d.id] = { status: 'error', error: '小さいサイズで失敗したため省略', summary: '省略' }; save(); continue;
+    }
     if (d.id !== 'env' && state.steps.env && state.steps.env.status !== 'done') {   // 準備失敗なら以降は実施しない
       state.steps[d.id] = { status: 'error', error: '準備に失敗したため未実施', summary: '未実施' }; save(); continue;
     }

@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>✨ Lucky Girl Oracle v17</title>
+<title>✨ Lucky Girl Oracle v18</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0d0b1a">
 <meta name="description" content="毎日の占い(15占術統合)から、その日の運気の女の子をAI生成するデイリー占いアプリ。">
@@ -180,6 +180,13 @@
   .modal-date { font-size: .7rem; color: var(--gold); margin-bottom: 4px; }
   .modal-theme { font-size: .75rem; color: var(--muted); margin-bottom: 10px; }
   .modal-actions { display: flex; gap: 8px; }
+  .local-box { background: rgba(255,255,255,.03); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; }
+  .local-status { font-size: .68rem; color: var(--text); line-height: 1.6; }
+  .local-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); margin: 8px 0 4px; overflow: hidden; display: none; }
+  .local-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--violet), var(--gold)); transition: width .3s; }
+  .local-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .local-btns .settings-save-btn { margin-top: 6px; }
+  .local-btns .settings-save-btn:disabled { opacity: .4; }
   .modal-save { color: var(--gold); border-color: rgba(232,201,106,.35); }
   .modal-close { width: 100%; padding: 10px; background: rgba(255,255,255,.06); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: .8rem; cursor: pointer; }
   .settings-toggle { text-align: center; margin-bottom: 10px; }
@@ -385,6 +392,30 @@
     </div>
     <button class="settings-save-btn" onclick="saveHfToken()" style="margin-bottom:18px">💾 HFトークンを保存</button>
 
+    <label class="settings-label" style="margin-top:4px">✦ 📴 端末内生成（通信なし・APIなしで生成）</label>
+    <div class="quality-row" id="localModeRow">
+      <button class="quality-btn" data-l="auto" onclick="setLocalMode('auto')">🔄 自動<small>通信できない時に使う</small></button>
+      <button class="quality-btn" data-l="always" onclick="setLocalMode('always')">📴 常に使う<small>APIを使わない</small></button>
+      <button class="quality-btn" data-l="off" onclick="setLocalMode('off')">OFF<small>使わない</small></button>
+    </div>
+    <div class="local-box">
+      <div class="local-status" id="localStatus">確認中…</div>
+      <div class="local-bar" id="localBar"><i></i></div>
+      <div class="local-btns">
+        <button class="settings-save-btn" id="localDlM" onclick="localDownload('M')">⬇ 標準モデル（約0.95GB）</button>
+        <button class="settings-save-btn" id="localDlS" onclick="localDownload('S')">⬇ 軽量（約0.60GB）</button>
+        <button class="settings-save-btn" id="localDel" onclick="localRemove()">🗑 削除</button>
+      </div>
+    </div>
+    <div class="settings-hint" style="margin-bottom:18px">
+      モデルを一度だけダウンロードすると、<strong style="color:var(--gold)">機内モードでも、無料枠やAPIが切れていても</strong>、この端末のGPUだけで生成できます。生成した画像は🧠AI超解像で精細化します。<br>
+      ・Wi-Fiでのダウンロードをおすすめします（標準 約0.95GB／軽量 約0.60GB）。<br>
+      ・生成サイズは448×640（端末のメモリ上限に合わせています）。1枚に数分かかることがあります。<br>
+      ・写真調が得意です。プロンプトは英語が向いています。<br>
+      ・モデル: Tiny SD（CreativeML Open RAIL-M。違法・有害な用途は禁止されています）。<br>
+      ・Safariは長く使わないと保存データを消すことがあります。ホーム画面に追加して使うと消えにくくなります。
+    </div>
+
     <label class="settings-label" style="margin-top:4px">✦ 最高品質モード（Pollinations APIキー）</label>
     <div class="quality-row" id="pmodelRow">
       <button class="quality-btn pmodel-btn" data-m="nanobanana-2" onclick="setPollinModel('nanobanana-2')">🍌 Nano Banana 2<small>Gemini 3.1 / 最高</small></button>
@@ -441,6 +472,7 @@
     </div>
   </div>
 </div>
+<script src="assets/ai/local-gen.js"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -2300,6 +2332,7 @@ let _lastSeed = 0; // その画像を生成した実シード（バリエーシ�
 let _lastImgInfo = null; // 直近生成の受信解像度・形式（診断表示用）
 let _lastKeyedError = null; // 直近のkeyed失敗理由（診断表示用）
 let _lastFreeError  = null; // 直近の無料FLUX失敗理由（診断表示用）
+let _lastLocalError = null; // 直近の端末内生成の失敗理由（診断表示用）
 // 結果画面の常設「品質バッジ」：キー付きネイティブ か 無料fluxアップスケール かを明示
 function _renderQualityBadge() {
   const el = document.getElementById('qualityBadge');
@@ -2307,8 +2340,8 @@ function _renderQualityBadge() {
   const info = _lastImgInfo;
   if(!info) { el.style.display = 'none'; el.textContent = ''; return; }
   el.style.display = '';
-  el.className = 'quality-badge ' + (info.hd ? 'native' : 'free');
-  let html = `${info.hd ? '✨' : '🆓'} <b>${esc(info.source)}</b> ／ 生成 ${info.w}×${info.h}`;
+  el.className = 'quality-badge ' + (info.hd || info.local ? 'native' : 'free');
+  let html = `${info.local ? '📴' : info.hd ? '✨' : '🆓'} <b>${esc(info.source)}</b> ／ 生成 ${info.w}×${info.h}`;
   if(info.srState === 'running')   html += ` ／ 🧠 AI超解像で精細化中… ${Math.floor(info.progress || 0)}%`;
   else if(info.srState === 'done') html += ` → <b>${info.ow}×${info.oh}</b>（🧠 ${esc(info.sr)}）`;
   else if(info.oh && info.oh !== info.h) html += ` → ${info.ow}×${info.oh}（拡大＋鮮明化）`;
@@ -2321,11 +2354,14 @@ function describeSource(winner) {
   const keyedErr = _lastKeyedError ? String(_lastKeyedError.message || _lastKeyedError) : '';
   if(winner === 'Pollinations-HD')
     return { source: `Pollinations ${getPollinModel()}`, hd: true, note: keyedErr ? '※選択モデルは使えず flux で生成' : '' };
+  if(/^端末内/.test(winner)) return { source: winner, hd: false, local: true, note: '' };
   const hd = /^FLUX/.test(winner);
   let note = '';
   if(getPollinKey() && keyedErr) note = '※Pollinations のキーが使えなかったため無料経路で生成';
   if(!hd && getHfEnabled() && _lastFreeError)
     note = (note ? note + ' ／ ' : '※') + (hfQuotaWait(String(_lastFreeError.message || '')) ? '無料FLUXの本日のGPU枠を使い切り（時間をおくと回復）' : '無料FLUXに接続できず');
+  if(_lastLocalError && localAvailable())
+    note = (note ? note + ' ／ ' : '※') + '端末内生成に失敗: ' + String(_lastLocalError.message || _lastLocalError).slice(0, 60);
   return { source: winner, hd, note };
 }
 
@@ -2346,14 +2382,26 @@ function _genOneVariation(seed, pd, onOk, onErr) {
       .catch(e => { if(!(_varAbort && _varAbort.signal.aborted)) freeImg(); });
   };
   const pk = getPollinKey();
-  if(pk) {
-    fetchKeyedImage(buildPollinationsUrl(pd, seed), pk,
-      (obj) => onOk(obj, true, 'Pollinations-HD'),
-      viaHf,
-      false);   // ← 3枚を同時に保持するので自動解放しない
-  } else {
-    viaHf();
+  const network = () => {
+    if(!navigator.onLine) { onErr && onErr(); return; }
+    if(pk) {
+      fetchKeyedImage(buildPollinationsUrl(pd, seed), pk,
+        (obj) => onOk(obj, true, 'Pollinations-HD'),
+        viaHf,
+        false);   // ← 3枚を同時に保持するので自動解放しない
+    } else {
+      viaHf();
+    }
+  };
+  // 📴 端末内（常に使う設定、またはオフライン時）
+  const mode = getLocalMode();
+  if(localAvailable() && pd.mode !== 'img2img' && mode !== 'off' && (mode === 'always' || !navigator.onLine)) {
+    LOCAL_GEN.generate({ prompt: pd.prompt, negative: pd.negative, seed, quality: getImgQuality(), signal: _varAbort && _varAbort.signal })
+      .then(r => onOk(URL.createObjectURL(r.blob), true, '端末内 ' + r.label))
+      .catch(() => { if(!(_varAbort && _varAbort.signal.aborted)) network(); });
+    return;
   }
+  network();
 }
 function _renderVarStrip() {
   const strip = document.getElementById('varStrip');
@@ -2772,6 +2820,7 @@ function generateImage(promptData, seed) {
     `${promptData.elemLabel || (promptData.theme||'').split('・')[0]} × ${promptData.style === 'anime' ? 'アニメ調' : 'リアル調'}`;
 
   const genToken = ++GEN_TOKEN; // この生成の世代トークン
+  _lastLocalError = null;
   const pollinUrl = buildPollinationsUrl(promptData, seed);
   const dateKey = currentDiv
     ? `${currentDiv.now.getFullYear()}-${String(currentDiv.now.getMonth()+1).padStart(2,'0')}-${String(currentDiv.now.getDate()).padStart(2,'0')}`
@@ -2793,18 +2842,46 @@ function generateImage(promptData, seed) {
   };
   const win = (src, winner) => { if(done) return; done = true; finishWithImage(src, winner, promptData, genToken); };
 
-  let secs = 0;
+  let secs = 0, limit = 480, stage = '生成中…';
+  const setStage = t => { stage = t; if(!done && hint) hint.textContent = `✦ ${stage} ${secs}秒`; };
   secTimer = setInterval(() => {
     secs++;
-    if(!done && hint) hint.textContent = `✦ 生成中… ${secs}秒`;
-    if(secs > 480) { stopAll(); onFail('タイムアウト（480秒）'); }
+    if(!done && hint) hint.textContent = `✦ ${stage} ${secs}秒`;
+    if(secs > limit) { stopAll(); onFail(`タイムアウト（${limit}秒）`); }
   }, 1000);
 
   // 生成経路（上から順に試し、失敗したら次へ）
   //   キー有り: Pollinations keyed(選択モデル) → keyed(flux) ┐
   //   キー無し: ───────────────────────────────────────────┴→ 無料FLUX(Hugging Face)
-  //             → Pollinations 無料 → 簡易URL → Stable Horde(SDXL)
-  //   ※ 一定時間で終わらなければ Horde を保険として並走させる
+  //             → Pollinations 無料 → 📴端末内 → 簡易URL → Stable Horde(SDXL)
+  //   📴端末内: 「常に使う」なら最初に、「自動」でオフラインなら最初に（通信が要らない）
+  //   ※ 一定時間で終わらなければ Horde を保険として並走させる（端末内の実行中は止める）
+  const localMode  = getLocalMode();
+  const localReady = localAvailable() && promptData.mode !== 'img2img' && localMode !== 'off';
+  let localTried = false;
+  const tryLocal = (next) => {
+    if(done) return;
+    localTried = true;
+    if(pollinTimer) { clearTimeout(pollinTimer); pollinTimer = null; }   // 端末内の実行中は Horde を並走させない
+    limit = secs + 900;                                                  // 端末の性能しだいで数分かかる
+    const ac = new AbortController(); _genAbort = ac;
+    setStage('📴 端末内で生成を準備中…');
+    LOCAL_GEN.generate({
+      prompt: promptData.prompt, negative: promptData.negative, seed, quality: getImgQuality(), signal: ac.signal,
+      onProgress: (ph, f) => setStage(ph === 'text' ? '📴 端末内: 文章を解析中…'
+                                    : ph === 'unet' ? `📴 端末内で描画中… ${Math.round(f * 100)}%`
+                                    :                 '📴 端末内: 仕上げ中…'),
+    }).then(r => {
+      if(_genAbort === ac) _genAbort = null;
+      if(!done) win(URL.createObjectURL(r.blob), '端末内 ' + r.label);
+    }).catch(e => {
+      if(_genAbort === ac) _genAbort = null;
+      if(done || ac.signal.aborted) return;
+      console.warn('[LGO] 端末内生成に失敗:', e);
+      _lastLocalError = e;
+      next();
+    });
+  };
   const armHorde = (ms) => {
     if(pollinTimer) clearTimeout(pollinTimer);
     pollinTimer = setTimeout(() => {
@@ -2832,7 +2909,8 @@ function generateImage(promptData, seed) {
     if(hint) hint.textContent = '✦ 生成中… (Pollinations 無料)';
     const p1 = new Image(); p1.crossOrigin = 'anonymous';
     p1.onload  = () => { if(!done) win(url, 'Pollinations 無料'); };
-    p1.onerror = tryPlainThenHorde;
+    // 無料の通信経路が全滅 → 保存済みなら端末内で生成（Horde より先に）
+    p1.onerror = () => (localReady && !localTried) ? tryLocal(tryPlainThenHorde) : tryPlainThenHorde();
     p1.src = url;
   };
   // ③ 無料FLUX（Hugging Face）… クレジット不要で 1024×1536 をネイティブ生成
@@ -2841,14 +2919,11 @@ function generateImage(promptData, seed) {
     if(!getHfEnabled() || promptData.mode === 'img2img') { tryPollinFree(); return; }
     armHorde(HORDE_DELAY_MS.hf);
     const ac = new AbortController(); _genAbort = ac;
-    const t0 = Date.now();
     hfGenerate(promptData, seed, getImgQuality(), {
       signal: ac.signal,
       onStatus: (label, ev) => {
         if(done || !hint) return;
-        const sec = Math.round((Date.now() - t0) / 1000);
-        hint.textContent = ev === 'generating' ? `✦ ${label} で描画中… ${sec}秒`
-                                               : `✦ ${label}（無料GPU）の順番待ち… ${sec}秒`;
+        setStage(ev === 'generating' ? `${label} で描画中…` : `${label}（無料GPU）の順番待ち…`);
       },
     }).then(r => {
       if(_genAbort === ac) _genAbort = null;
@@ -2861,10 +2936,18 @@ function generateImage(promptData, seed) {
     });
   };
 
+  // 通常の開始点（キーの有無で分岐）
+  const startNetwork = () => {
+  if(done) return;
+  if(!navigator.onLine) {                         // 通信が無い時はネットワーク経路を試さない
+    onFail(localReady ? '端末内生成に失敗しました（' + String((_lastLocalError && _lastLocalError.message) || '') + '）'
+                      : 'オフラインです。⚙設定の「📴 端末内生成」でモデルを保存すると、通信なしで生成できます');
+    return;
+  }
   const _pk = getPollinKey();
   if(_pk) {
     // ①② キー使用時は fetch+Bearer で取得（<img>はヘッダー不可）
-    hint.textContent = '✦ 生成中… (Pollinations AI)';
+    setStage('生成中… (Pollinations AI)');
     armHorde(HORDE_DELAY_MS.keyed);
     fetchKeyedImage(pollinUrl, _pk,
       (objUrl) => { if(!done) win(objUrl, 'Pollinations-HD'); },
@@ -2883,6 +2966,10 @@ function generateImage(promptData, seed) {
   } else {
     tryHfThenFree();
   }
+  };
+
+  if(localReady && (localMode === 'always' || !navigator.onLine)) tryLocal(startNetwork);
+  else startNetwork();
 }
 
 function getDailySeed(div) {
@@ -3289,6 +3376,8 @@ function toggleSettings() {
     setEnhanceMode(getEnhanceMode());
     setHfEnabled(getHfEnabled());
     setAiSrEnabled(getAiSrEnabled());
+    setLocalMode(getLocalMode());
+    refreshLocalStatus();
   }
 }
 
@@ -3300,6 +3389,78 @@ function saveHordeKey() {
   } catch(e){}
   document.getElementById('settingsPanel').classList.remove('open');
   showToast(key ? '✅ APIキーを保存しました' : '✅ 匿名キーに戻しました');
+}
+
+// ════════════════════════════════════════
+//  端末内（オフライン）生成の設定
+// ════════════════════════════════════════
+const LOCAL_MODE_LABEL = { auto:'自動', always:'常に使う', off:'OFF' };
+function getLocalMode() { try { return LOCAL_MODE_LABEL[localStorage.getItem('lg_local')] ? localStorage.getItem('lg_local') : 'auto'; } catch(e) { return 'auto'; } }
+function setLocalMode(m) {
+  if(!LOCAL_MODE_LABEL[m]) m = 'auto';
+  try { localStorage.setItem('lg_local', m); } catch(e){}
+  document.querySelectorAll('#localModeRow .quality-btn').forEach(b => b.classList.toggle('active', b.dataset.l === m));
+}
+const localAvailable = () => !!(window.LOCAL_GEN && LOCAL_GEN.isReady());
+const fmtGB = b => (b / 1073741824).toFixed(b >= 1073741824 * 10 ? 0 : 2) + 'GB';
+let _localDl = null;   // ダウンロード中のモデル id
+
+async function refreshLocalStatus() {
+  const el = document.getElementById('localStatus');
+  const btnM = document.getElementById('localDlM'), btnS = document.getElementById('localDlS'), del = document.getElementById('localDel');
+  if(!el) return;
+  if(!window.LOCAL_GEN) { el.textContent = '⚠ この環境では使えません'; [btnM, btnS, del].forEach(b => b && (b.disabled = true)); return; }
+  const sup = await LOCAL_GEN.supported();
+  if(!sup.ok) {
+    el.innerHTML = `⚠ この端末では使えません（${esc(sup.reason)}）`;
+    [btnM, btnS, del].forEach(b => b && (b.disabled = true));
+    return;
+  }
+  const st = await LOCAL_GEN.status();
+  if(_localDl) return;                       // 進捗表示を上書きしない
+  const saved = Object.entries(st.tiers).filter(([, t]) => t.ready);
+  el.innerHTML = (saved.length
+      ? `✅ 保存済み: ${saved.map(([, t]) => `${esc(t.short)}（${fmtGB(t.bytes)}）`).join('・')}`
+      : '⬜ モデル未保存（ダウンロードすると通信なしで生成できます）')
+    + `<br><span style="color:var(--muted)">端末の空き容量: ${st.quota ? fmtGB(Math.max(0, st.quota - st.usage)) : '不明'}${st.persisted ? '' : '（Safariが自動削除する場合あり）'}</span>`;
+  btnM.disabled = st.tiers.M.ready; btnM.textContent = st.tiers.M.ready ? '✅ 標準モデル保存済み' : '⬇ 標準モデル（約0.95GB）';
+  btnS.disabled = st.tiers.S.ready; btnS.textContent = st.tiers.S.ready ? '✅ 軽量モデル保存済み' : '⬇ 軽量（約0.60GB）';
+  del.disabled = !saved.length;
+}
+
+async function localDownload(tier) {
+  if(!window.LOCAL_GEN) return;
+  const btn = document.getElementById(tier === 'M' ? 'localDlM' : 'localDlS');
+  if(_localDl === tier) { LOCAL_GEN.abortDownload(); return; }   // ダウンロード中に押す＝中断
+  if(_localDl) { showToast('別のダウンロードが進行中です'); return; }
+  const size = tier === 'M' ? '約0.95GB' : '約0.60GB';
+  if(!confirm(`📴 端末内生成の${tier === 'M' ? '標準' : '軽量'}モデル（${size}）をダウンロードします。\nWi-Fi接続をおすすめします。途中で止まっても続きから再開できます。\n\nよろしいですか？`)) return;
+  const el = document.getElementById('localStatus'), bar = document.getElementById('localBar');
+  _localDl = tier; bar.style.display = 'block';
+  btn.disabled = false; btn.textContent = '⏸ 中断する';
+  try {
+    await LOCAL_GEN.download(tier, p => {
+      const pct = p.total ? p.done / p.total * 100 : 0;
+      bar.firstElementChild.style.width = pct.toFixed(1) + '%';
+      el.textContent = `⬇ ダウンロード中… ${Math.floor(pct)}%（${fmtGB(p.done)} / ${fmtGB(p.total)}）`;
+    });
+    el.textContent = '🔎 オフライン用の実行部品を保存中…';
+    await LOCAL_GEN.warmup().catch(() => {});
+    showToast('✅ 端末内生成の準備ができました（通信なしで生成できます）');
+  } catch(e) {
+    showToast(e.name === 'AbortError' ? '⏸ ダウンロードを中断しました（続きから再開できます）' : '⚠ ダウンロード失敗: ' + (e.message || e));
+  } finally {
+    _localDl = null; bar.style.display = 'none';
+    refreshLocalStatus();
+  }
+}
+
+async function localRemove() {
+  if(!window.LOCAL_GEN || _localDl) return;
+  if(!confirm('保存した端末内生成のモデルを削除しますか？\n（もう一度使うには再ダウンロードが必要です）')) return;
+  await LOCAL_GEN.remove('M'); await LOCAL_GEN.remove('S');
+  showToast('🗑 モデルを削除しました');
+  refreshLocalStatus();
 }
 
 // ════════════════════════════════════════
@@ -3362,6 +3523,7 @@ async function init() {
   setImgQuality(getImgQuality());
   setPollinModel(getPollinModel());
 
+  if(window.LOCAL_GEN) LOCAL_GEN.status().catch(() => {});   // 端末内生成モデルの保存状況
   // 暦は端末内の天文計算で完結するため、通信を待たずに即描画できる
   try { localStorage.removeItem('lgo_cal_v1'); } catch(e){}   // 旧・外部暦キャッシュの掃除
   if(!refreshDivination()) {

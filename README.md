@@ -12,7 +12,8 @@
 | `sw.js` | Service Worker（アプリシェルのキャッシュとオフライン起動） |
 | `assets/icons/` | アプリアイコン（192 / 512 / maskable / apple-touch） |
 | `assets/splash/` | iOS起動スプラッシュ。ファイル名は `<幅>x<高>.png` |
-| `assets/ai/` | 端末内AI超解像（TensorFlow.js・Real-CUGAN/Real-ESRGAN・ライセンス同梱） |
+| `assets/ai/` | 端末内AI超解像（TensorFlow.js・Real-CUGAN/Real-ESRGAN）と端末内生成（onnxruntime-web）。ライセンス同梱 |
+| `diag.html` | 実機診断（端末内生成が動くかを判定） |
 
 ## 占術エンジン
 
@@ -36,6 +37,7 @@
 | 2 | **無料FLUX（Hugging Face Spaces）** | 既定ON・キー不要 | 1024×1536 ネイティブ |
 | 3 | Pollinations 無料 | 上が失敗/無料GPU枠切れ | 約627×940 |
 | 4 | Stable Horde（SDXL → SD1.5） | 最終手段 | 832×1216 |
+| 📴 | **端末内生成（Tiny SD・オフライン）** | モデル保存時。「常に使う」なら最初、「自動」ならオフライン時は最初・オンライン時は Pollinations 無料の後 | 448×640 → AI超解像 |
 
 | 画質モード | 生成 | 仕上げ |
 | --- | --- | --- |
@@ -48,6 +50,16 @@
 - AI超解像は `assets/ai/` の TensorFlow.js と学習済みモデル（Real-CUGAN: MIT／Real-ESRGAN: BSD-3）を
   端末のGPU（WebGPU → WebGL）で実行します。モデルは初回のみ読み込み IndexedDB に保存されます。
   画像はまず原寸で表示し、超解像が終わると高解像度版に差し替わります。
+
+### 📴 端末内生成（通信なし）
+
+⚙設定でモデル（標準 約0.95GB／軽量 約0.60GB）を一度だけダウンロードすると、機内モードでも、
+無料枠やAPIが切れていても、端末のGPU（WebGPU）だけで生成できます。
+
+- 実行: onnxruntime-web（WebGPU）。部品を1つずつ読み込み・解放してメモリを節約（iPhone 15 Pro の実機診断: 1ページ約1.9GBが上限）
+- 保存: OPFS（Worker で書き込み・途中再開・SHA-256 検証）
+- 写真調が得意。プロンプトは英語向き（CLIP の 77トークンまで）
+- 実機診断ページ: `diag.html`
 
 APIキー類はブラウザの localStorage にのみ保存され、生成リクエスト以外には送られません。
 

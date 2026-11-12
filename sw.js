@@ -1,7 +1,7 @@
 // 運気の女神 Lucky Girl Oracle ── Service Worker
 // アプリシェル(HTML/アイコン)をキャッシュしてオフライン起動＆高速再表示。
 // 画像生成API(Pollinations/Horde)など外部オリジンはSWを介さずネットワークへ通す。
-const CACHE = 'lg-oracle-v4';
+const CACHE = 'lg-oracle-v5';
 const FONT_CACHE = 'lg-fonts-v1';   // Google Fonts（更新頻度が低いので別枠で長期保持）
 
 // アプリシェル: 起動に必須のものだけ。スプラッシュ(assets/splash)は
@@ -12,6 +12,8 @@ const ASSETS = [
   './assets/icons/icon-512.png',
   './assets/icons/icon-512-maskable.png',
   './assets/icons/apple-touch-icon.png',
+  './assets/ai/local-gen.js',          // 端末内生成（オフライン時にも必要）
+  './assets/ai/local-gen-worker.js',
 ];
 
 self.addEventListener('install', e => {
@@ -75,6 +77,16 @@ self.addEventListener('fetch', e => {
 
   // AI超解像のモデル重みは本体側が IndexedDB に保存するので、SWでは二重に持たない
   if (url.pathname.includes('/assets/ai/models/')) return;
+
+  // 端末内生成の実行部品（約29MB）は中身が変わらないのでキャッシュ優先。
+  // 裏での再取得もしない（stale-while-revalidate だと毎回29MBを取り直してしまう）
+  if (url.pathname.includes('/assets/ai/ort/')) {
+    e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => {
+      if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); }
+      return res;
+    })));
+    return;
+  }
 
   // その他の同一オリジン資産: stale-while-revalidate
   //   → キャッシュがあれば即返して体感を最速に、裏で静かに最新へ更新する

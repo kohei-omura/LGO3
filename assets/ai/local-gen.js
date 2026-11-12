@@ -208,8 +208,15 @@
              msPerStep: r.msPerStep, ms: r.ms, truncated: r.truncated };
   }
 
+  // オフラインで初めて生成する時に備え、実行部品を先に取得しておく（Service Worker が保存する）
+  async function warmup() {
+    const files = ['local-gen.js', 'local-gen-worker.js', 'local-gen-core.js', 'ort/ort.webgpu.min.js', 'ort/ort-wasm-simd-threaded.asyncify.mjs',
+                   'ort/ort-wasm-simd-threaded.asyncify.wasm', 'tf.min.js', 'tf-backend-webgpu.min.js', 'upscaler.min.js'];
+    await Promise.all(files.map(f => fetch(cfg.assetBase + f).then(r => r.arrayBuffer()).catch(() => null)));
+  }
+
   window.LOCAL_GEN = {
-    supported, status, download, abortDownload, remove, generate,
+    supported, status, download, abortDownload, remove, generate, warmup,
     isReady: () => !!readyTier(), readyTier, plans: PLANS,
     _configure: o => { Object.assign(cfg, o); _support = null; _ready = {}; for (const k of Object.keys(cfg.tiers)) _ready[k] = false; },
   };

@@ -83,18 +83,14 @@ const STEPS = [
   { id: 'gpuC',    title: '5. GPU転送 C（onnxruntime と同じ方式）',      run: s => stepGpu(s, 'C'), risky: true },
   { id: 'ort',     title: '6. 本番と同じ読込（onnxruntime）',            run: stepOrt,    risky: true },
 ];
-// 第2回の実機結果: 256×384 は2回とも実行完了 → その後（片付け中か直後）に強制終了。
-// 「いつ落ちるか」を細かく記録し、GPUバッファの使い回し(キャッシュ)を切った場合と比べる
-const SZ = Q.get('sizes') ? Q.get('sizes').split(',').map(x => x.split('x').map(Number)) : [[192, 256], [256, 384], [384, 576]];
-// 'disabled' は onnxruntime 1.31 で実行時エラーになる（確認済み）ため、使用後すぐ解放する 'lazyRelease' を使う
-const NOCACHE = { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' };
+// 第3回の実機結果: 使い回しOFFで 256×384 は片付けまで成功。続けて作り直すと落ちる。
+// → アプリに対策（使い回しOFF・一時バッファなしの転送）を入れた。ここではアプリ本体の生成処理を
+//   そのまま使い、毎回ページを開き直した状態で「文章解析→描画→仕上げ」を通しで試す
+const SZ = Q.get('sizes') ? Q.get('sizes').split(',').map(x => x.split('x').map(Number)) : [[256, 384], [320, 448], [384, 576]];
 STEPS.push(
-  { id: 'r1', title: `7. ${SZ[0][0]}×${SZ[0][1]} を6回連続（回数で溜まるか）`, run: s => stepRuns(s, SZ[0], 6, null) },
-  { id: 'r2', title: `8. ${SZ[1][0]}×${SZ[1][1]} を2回（片付けの前後を記録）`, run: s => stepRuns(s, SZ[1], 2, null) },
-  { id: 'r3', title: `9. ${SZ[1][0]}×${SZ[1][1]} を2回・使い回しOFF`,       run: s => stepRuns(s, SZ[1], 2, NOCACHE) },
-  { id: 'r4', title: `10. ${SZ[2][0]}×${SZ[2][1]} を2回・使い回しOFF`,      run: s => stepRuns(s, SZ[2], 2, NOCACHE) },
+  ...SZ.map(([w, h], i) => ({ id: 'f' + i, title: `${7 + i}. 本番の生成 ${w}×${h}（2工程）`, run: s => stepGen(s, [[w, h]]), reloadBefore: true, w, h })),
+  { id: 'f9', title: `${7 + SZ.length}. 本番の生成 ${SZ[1][0]}×${SZ[1][1]} を2枚続けて`, run: s => stepGen(s, [SZ[1], SZ[1]]), reloadBefore: true },
 );
-
 let state = load() || { v: 1, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
@@ -237,7 +233,8 @@ async function prepOrt(s) {
   mark(s, '実行部品（onnxruntime）の読み込み');
   if (!window.ort) await loadScript('assets/ai/ort/ort.webgpu.min.js');
   if (!window.LocalGenCore) await loadScript('assets/ai/local-gen-core.js');
-  ort.env.wasm.wasmPaths = new URL('assets/ai/ort/', location.href).href;
+  { const b = new URL('assets/ai/ort/', location.href).href;   // ?v= は実行部品を修正した時に古いキャッシュを使わせないため
+      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs?v=lgo1', wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
   ort.env.wasm.numThreads = 1; ort.env.logLevel = 'error';
 }
 async function createUnet(s, lh, lw, epOpts) {
@@ -276,28 +273,33 @@ async function stepOrt(s) {
   await sess.release(); sess = null;
   s.ok = bad === 0; s.summary = bad ? `出力に異常値 ${bad}個` : 'OK（作成・実行とも成功）';
 }
-// 7〜10. 実行と片付けの各段階を記録（記録が端末に届くよう、要所で少し待つ）
-async function stepRuns(s, [w, h], n, epOpts) {
-  const pause = ms => sleep(ms);
-  await prepOrt(s);
-  const lh = h / 8, lw = w / 8;
-  let sess = await createUnet(s, lh, lw, epOpts);
-  await pause(300);
-  const ms = []; let bad = 0;
-  for (let k = 1; k <= n; k++) {
-    mark(s, `${k}回目の実行中…`); await pause(100);
-    const t = performance.now();
-    bad += await runUnet(sess, lh, lw);
-    ms.push(performance.now() - t);
-    mark(s, `${k}回目 完了（${(ms[k - 1] / 1000).toFixed(1)}秒）`); await pause(300);
+// 7〜. アプリ本体（LOCAL_GEN）で通しの生成。段階が変わるたびに記録
+const PH = { 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章部品の作成完了', text: '文章の解析',
+  'unet:load': '描画部品の読込', 'unet:run': '描画部品の作成完了→描画開始', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ部品の作成完了', vae: '仕上げ' };
+async function stepGen(s, sizes) {
+  if (!window.LOCAL_GEN) await loadScript('assets/ai/local-gen.js');
+  if (Q.get('ep')) LOCAL_GEN._configure({ ep: Q.get('ep') });
+  await LOCAL_GEN.status();
+  const per = [];
+  for (let n = 0; n < sizes.length; n++) {
+    const [w, h] = sizes[n], tag = sizes.length > 1 ? `${n + 1}枚目 ` : '';
+    let last = '';
+    mark(s, `${tag}${w}×${h} 生成開始`); await sleep(100);
+    const t0 = performance.now();
+    const r = await LOCAL_GEN.generate({ prompt: 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', negative: 'lowres, bad anatomy',
+      seed: 1234, tier: state.tier, size: { w, h }, steps: 2,
+      onProgress: (ph, f) => {
+        const k = ph + Math.round(f * 100); if (k === last) return; last = k;
+        mark(s, tag + (ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : '')));
+      } });
+    if (r.width !== w) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);
+    per.push(r.msPerStep);
+    mark(s, `${tag}完了（全体 ${((performance.now() - t0) / 1000).toFixed(1)}秒・1工程 ${(r.msPerStep / 1000).toFixed(1)}秒）`);
+    await sleep(2000);
+    mark(s, `${tag}完了後 2秒 生存`);
   }
-  mark(s, '片付け前の待機（3秒）'); await pause(3000);
-  mark(s, '片付け前の待機を生存 → 片付け開始'); await pause(200);
-  await sess.release(); sess = null;
-  mark(s, '片付け完了 → 待機（3秒）'); await pause(3000);
-  mark(s, '片付け後の待機を生存');
-  s.ok = bad === 0;
-  s.summary = bad ? `出力に異常値 ${bad}個` : `OK（1回 約${(ms[ms.length - 1] / 1000).toFixed(1)}秒）`;
+  s.ok = true; s.msPerStep = per[per.length - 1];
+  s.summary = `OK（1工程 ${(s.msPerStep / 1000).toFixed(1)}秒）`;
 }
 
 // ════════════════ 判定 ════════════════
@@ -310,14 +312,12 @@ function verdict() {
   if (bad('gpuA')) return '区切って送っても落ちる → GPUへ送った量そのものが上限超え（より小さいモデルが必要）';
   if (bad('gpuB') || bad('gpuC')) return '連続で送ると落ちる → 区切って送れば回避できる見込み（部品を分割して読み込む修正で対応可）';
   if (bad('ort')) return '転送は問題なし → onnxruntime 内部（最適化処理など）で落ちている';
-  const at = id => st[id] && st[id].status === 'crashed' ? `💥（${st[id].mark || '?'}）` : bad(id) ? '⚠' : '○';
-  const lines = ['r1', 'r2', 'r3', 'r4'].map(id => `${STEPS.find(d => d.id === id).title.replace(/^\d+\. /, '')}: ${at(id)}`);
-  let msg = '';
-  if (bad('r2') && !bad('r3')) msg = '→ GPUバッファの使い回しが原因の見込み（OFFにする修正で対応可）';
-  else if (bad('r1')) msg = '→ 小さいサイズでも回数を重ねると落ちる（溜まっていく）';
-  else if (!bad('r2')) msg = '→ 今回は落ちず（前回の失敗は片付け直後の連続実行が原因の可能性）';
-  else msg = '→ 使い回しOFFでも落ちる（片付け・作業メモリ側を調べる）';
-  return lines.join(' ／ ') + '\n' + msg;
+  const at = id => st[id] && st[id].status === 'crashed' ? `💥（${st[id].mark || '?'}）` : st[id] && st[id].status === 'error' ? `⚠（${st[id].error}）` : '○';
+  const gs = STEPS.filter(d => /^f/.test(d.id));
+  const lines = gs.map(d => `${d.title.replace(/^\d+\. 本番の生成 /, '')}: ${at(d.id)}`);
+  const okSizes = gs.filter(d => d.w && st[d.id] && st[d.id].status === 'done');
+  const msg = okSizes.length ? `→ ${okSizes[okSizes.length - 1].w}×${okSizes[okSizes.length - 1].h} まで生成できます` : '→ 対策後も通しの生成に失敗';
+  return lines.join('\n') + '\n' + msg;
 }
 
 // ════════════════ 表示 ════════════════
@@ -380,6 +380,10 @@ async function runAll() {
     if (d.id !== 'env' && state.steps.env && state.steps.env.status !== 'done') {   // 準備失敗なら以降は実施しない
       state.steps[d.id] = { status: 'error', error: '準備に失敗したため未実施', summary: '未実施' }; save(); continue;
     }
+    if (d.reloadBefore && !state.fresh) {                          // 前の手順のメモリを持ち越さないよう、開き直してから
+      state.fresh = d.id; save(); location.reload(); return;
+    }
+    state.fresh = null;
     const s = state.steps[d.id] = { status: 'running', _t0: performance.now() };
     mark(s, '開始');
     try {

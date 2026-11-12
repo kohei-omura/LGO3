@@ -42,7 +42,8 @@
   const FALLBACK_SIZE = { w: 384, h: 576 };   // メモリ不足で落ちた時に1回だけ縮めて再試行
 
   // テスト時のみ差し替え可能（配布元・実行方式・モデル定義）
-  const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true };
+  const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
+                epOptions: { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' } };
 
   const loadScript = src => new Promise((res, rej) => {
     const s = document.createElement('script');
@@ -152,7 +153,8 @@
     if (!_ortReady) _ortReady = (async () => {
       if (typeof LocalGenCore === 'undefined') await loadScript(cfg.assetBase + 'local-gen-core.js');
       if (typeof ort === 'undefined') await loadScript(cfg.assetBase + 'ort/ort.webgpu.min.js');
-      ort.env.wasm.wasmPaths = new URL(cfg.assetBase + 'ort/', location.href).href;
+      { const b = new URL(cfg.assetBase + 'ort/', location.href).href;   // ?v= は実行部品を修正した時に古いキャッシュを使わせないため
+      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs?v=lgo1', wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
       ort.env.wasm.numThreads = 1;             // SharedArrayBuffer が無い環境（GitHub Pages）でも動くように
       ort.env.logLevel = 'error';
       try { ort.env.webgpu.powerPreference = 'high-performance'; } catch (e) {}
@@ -183,7 +185,9 @@
         const ov = comp === 'text_encoder' ? { batch_size: d.batch, sequence_length: 77 }
                  : comp === 'unet'         ? { batch_size: d.batch, height: d.h, width: d.w, sequence_length: 77 }
                  :                           { batch_size: d.batch, latent_height: d.h, latent_width: d.w };
-        return { executionProviders: [cfg.ep], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 };
+        // WebGPU: 使い終わったGPUバッファをすぐ返す（既定の使い回しは iPhone で強制終了の原因になった。実機テストで確認）
+        const ep = cfg.ep === 'webgpu' && cfg.epOptions ? Object.assign({ name: 'webgpu' }, cfg.epOptions) : cfg.ep;
+        return { executionProviders: [ep], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 };
       },
     };
   }
@@ -216,7 +220,7 @@
 
   // オフラインで初めて生成する時に備え、実行部品を先に取得しておく（Service Worker が保存する）
   async function warmup() {
-    const files = ['local-gen.js', 'local-gen-worker.js', 'local-gen-core.js', 'ort/ort.webgpu.min.js', 'ort/ort-wasm-simd-threaded.asyncify.mjs',
+    const files = ['local-gen.js', 'local-gen-worker.js', 'local-gen-core.js', 'ort/ort.webgpu.min.js', 'ort/ort-wasm-simd-threaded.asyncify.mjs?v=lgo1',
                    ...['M', 'S'].flatMap(t => ['text_encoder', 'unet', 'vae_decoder'].map(c => `graphs/${t}/${c}.onnx`)),
                    'ort/ort-wasm-simd-threaded.asyncify.wasm', 'tf.min.js', 'tf-backend-webgpu.min.js', 'upscaler.min.js'];
     await Promise.all(files.map(f => fetch(cfg.assetBase + f).then(r => r.arrayBuffer()).catch(() => null)));

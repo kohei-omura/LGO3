@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0b1a">
+<title>📱 実機診断 — 運気の女神</title>
+<style>
+  :root { --ink:#0d0b1a; --card:#1a1730; --border:rgba(255,255,255,.12); --gold:#e8c96a; --rose:#f49aad; --violet:#a78bfa; --green:#6ee7b7; --text:#f0eaff; --muted:#8b80ac; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ink); color: var(--text); font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; line-height: 1.6; -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: calc(20px + env(safe-area-inset-top)) 16px calc(60px + env(safe-area-inset-bottom)); }
+  h1 { font-size: 1.25rem; color: var(--gold); margin-bottom: 6px; }
+  .lead { font-size: .8rem; color: var(--muted); margin-bottom: 12px; }
+  .warn { font-size: .76rem; background: rgba(244,154,173,.1); border: 1px solid rgba(244,154,173,.35); color: var(--rose); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; margin-bottom: 14px; }
+  button { flex: 1; padding: 12px 8px; border-radius: 12px; border: 1px solid rgba(167,139,250,.45); background: rgba(167,139,250,.16); color: var(--text); font-size: .85rem; font-weight: 700; cursor: pointer; }
+  button.sub { flex: 0 0 auto; background: none; border-color: var(--border); color: var(--muted); font-weight: 400; font-size: .74rem; }
+  button:disabled { opacity: .45; }
+  #verdict { border-radius: 14px; padding: 14px; margin-bottom: 14px; border: 1px solid var(--border); background: var(--card); display: none; }
+  #verdict h2 { font-size: 1rem; color: var(--gold); margin-bottom: 8px; }
+  .tier { font-size: .8rem; padding: 6px 0; border-top: 1px solid var(--border); }
+  .tier b { color: var(--text); }
+  .tier .why { display: block; font-size: .7rem; color: var(--muted); }
+  .sec { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; margin-bottom: 9px; }
+  .sec h3 { font-size: .84rem; display: flex; justify-content: space-between; gap: 8px; }
+  .sec h3 span { font-weight: 400; font-size: .74rem; color: var(--muted); white-space: nowrap; }
+  .sec .body { font-size: .72rem; color: #cfc6ea; margin-top: 6px; white-space: pre-wrap; word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
+  .sec .body:empty { display: none; }
+  .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); margin-top: 8px; overflow: hidden; display: none; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--violet), var(--gold)); }
+  .ok { color: var(--green); } .ng { color: var(--rose); } .run { color: var(--gold); }
+  #copyBtn { width: 100%; margin: 6px 0 10px; display: none; }
+  #toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: rgba(20,17,40,.96); border: 1px solid rgba(167,139,250,.4); border-radius: 12px; padding: 9px 16px; font-size: .78rem; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  a { color: var(--violet); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📱 実機診断</h1>
+  <p class="lead">この端末のブラウザで「端末内（オフライン）画像生成」が動くかを調べます。所要時間は1〜3分です。</p>
+  <div class="warn">⚠ メモリ試験の途中で、画面が真っ白になったり勝手に再読み込みされることがあります。故障ではなく、端末の限界を測れた合図です。そのままこのページを開き直すと、続きから自動で再開します。<br>他のアプリを閉じ、Wi-Fiにつないだ状態で実行してください。</div>
+  <div class="row">
+    <button id="startBtn">▶ 診断を開始</button>
+    <button id="resetBtn" class="sub">最初からやり直す</button>
+  </div>
+  <div id="verdict"></div>
+  <div id="sections"></div>
+  <button id="copyBtn">📋 結果をコピー</button>
+  <p class="lead"><a href="index.html">← アプリに戻る</a></p>
+</div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ════════════════════════════════════════════════════════════
+   実機診断: 端末内画像生成(ONNX Runtime Web + WebGPU)が動くかを測る
+   - 各手順の結果は localStorage に逐次保存する。メモリ試験でページごと
+     落とされても、開き直せば「どこまで確保できたか」が残り、続きから再開する。
+   - URL パラメータ（動作確認用）: ?gpucap=MB&jscap=MB&opfsmb=MB
+   ════════════════════════════════════════════════════════════ */
+const KEY = 'lgo_diag_v1';
+const MB  = 1048576;
+const CHUNK_MB = 64;
+const Q = new URLSearchParams(location.search);
+const CAP = {
+  gpu:  +Q.get('gpucap') || 4096,   // GPUメモリ試験の上限(MB)。2.6GB級の判定に1.5倍=約3.9GBが要る
+  js:   +Q.get('jscap')  || 2048,   // 通常メモリ試験の上限(MB)
+  opfs: +Q.get('opfsmb') || 100,    // 保存試験で書き込む量(MB)
+};
+// 候補モデル（mb = ダウンロード量）
+const TIERS = [
+  { id: 'L', name: 'SD-Turbo',             mb: 2580 },
+  { id: 'M', name: 'Tiny SD（fp16）',      mb: 1070 },
+  { id: 'S', name: 'Tiny SD（4bit圧縮）',  mb: 707  },
+];
+const HF_SMALL = 'https://huggingface.co/schmuell/sd-turbo-ort-web/resolve/main/model_index.json';
+const HF_OTHER = 'https://huggingface.co/cursedhelm/aderpy-deepdreamer-onnx/resolve/main/README.md';
+
+const STEPS = [
+  { id: 'device',  title: '1. 端末の情報',                 run: stepDevice  },
+  { id: 'webgpu',  title: '2. WebGPU（GPU計算機能）',       run: stepWebGPU  },
+  { id: 'storage', title: '3. 保存容量と書き込み',          run: stepStorage },
+  { id: 'network', title: '4. モデル配布元への接続',        run: stepNetwork },
+  { id: 'jsmem',   title: '5. 通常メモリ試験',              run: stepJsMem,  risky: true },
+  { id: 'gpumem',  title: '6. GPUメモリ試験',               run: stepGpuMem, risky: true },
+];
+
+let state = load() || { v: 1, inProgress: false, steps: {} };
+function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const $ = id => document.getElementById(id);
+const fmtMB = mb => mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : Math.round(mb) + ' MB';
+function withTimeout(p, ms, label) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(label + ' が' + ms / 1000 + '秒以内に応答しませんでした')), ms))]);
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.opacity = '1'; setTimeout(() => { t.style.opacity = '0'; }, 2200); }
+
+// ── 圧縮されにくい乱数ブロック（iOSはメモリを圧縮するため、ゼロ埋めだと実力以上に確保できてしまう）──
+let _rand = null;
+function randomBlock() {
+  if (_rand) return _rand;
+  _rand = new Uint8Array(MB);
+  for (let o = 0; o < MB; o += 65536) crypto.getRandomValues(_rand.subarray(o, o + 65536));
+  return _rand;
+}
+function fillRandom(u8) { const r = randomBlock(); for (let o = 0; o < u8.length; o += MB) u8.set(r, o); }
+
+// ════════════════ 1. 端末 ════════════════
+async function stepDevice(s) {
+  const ua = navigator.userAgent;
+  const ios = /OS (\d+)[_.](\d+)(?:[_.](\d+))?/.exec(ua);
+  const ver = /Version\/([\d.]+)/.exec(ua);
+  s.data = {
+    userAgent: ua,
+    os: ios ? `iOS ${ios[1]}.${ios[2]}${ios[3] ? '.' + ios[3] : ''}（UA表記。新しいiOSは固定値を返すことがあります）` : '不明',
+    browser: ver ? 'Safari系 ' + ver[1] : '不明',
+    screen: `${screen.width}×${screen.height} @${devicePixelRatio}x`,
+    cores: navigator.hardwareConcurrency || '不明',
+    deviceMemory: navigator.deviceMemory ? navigator.deviceMemory + ' GB' : '非公開',
+    homeScreenApp: !!(navigator.standalone || matchMedia('(display-mode: standalone)').matches),
+    crossOriginIsolated: !!self.crossOriginIsolated,
+    sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
+    wasm: typeof WebAssembly === 'object',
+  };
+  s.summary = `${s.data.screen} / ${s.data.browser}`;
+  s.ok = true;
+}
+
+// ════════════════ 2. WebGPU ════════════════
+const LIMIT_KEYS = ['maxBufferSize', 'maxStorageBufferBindingSize', 'maxUniformBufferBindingSize', 'maxTextureDimension2D',
+  'maxStorageBuffersPerShaderStage', 'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupStorageSize', 'maxBindGroups'];
+
+async function getAdapter() {
+  if (!navigator.gpu) return null;
+  return await withTimeout(navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }), 10000, 'GPUの取得');
+}
+// 小さな計算を実際に走らせる（「機能がある」と「正しく動く」は別のため）
+async function computeCheck(adapter, useF16) {
+  const device = await adapter.requestDevice(useF16 ? { requiredFeatures: ['shader-f16'] } : {});
+  try {
+    const N = 1024;
+    const code = `${useF16 ? 'enable f16;\n' : ''}
+      @group(0) @binding(0) var<storage, read_write> d: array<f32>;
+      @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+        let i = id.x;
+        if (i < arrayLength(&d)) {
+          ${useF16 ? 'let h: f16 = f16(d[i]); d[i] = f32(h * 2.0h) + 1.0;' : 'd[i] = d[i] * 2.0 + 1.0;'}
+        }
+      }`;
+    device.pushErrorScope('validation');
+    const module = device.createShaderModule({ code });
+    const pipeline = await device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+    const src = new Float32Array(N).map((_, i) => i);
+    const buf = device.createBuffer({ size: N * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+    const out = device.createBuffer({ size: N * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(buf, 0, src);
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: buf } }] }));
+    pass.dispatchWorkgroups(Math.ceil(N / 64));
+    pass.end();
+    enc.copyBufferToBuffer(buf, 0, out, 0, N * 4);
+    device.queue.submit([enc.finish()]);
+    const err = await device.popErrorScope();
+    if (err) throw new Error(err.message);
+    await withTimeout(out.mapAsync(GPUMapMode.READ), 10000, '計算結果の読み出し');
+    const res = new Float32Array(out.getMappedRange().slice(0));
+    out.unmap();
+    for (let i = 0; i < N; i++) if (Math.abs(res[i] - (i * 2 + 1)) > 0.01) throw new Error(`計算結果が不正 (i=${i}: ${res[i]})`);
+    return 'OK';
+  } finally { try { device.destroy(); } catch (e) {} }
+}
+async function stepWebGPU(s) {
+  s.data = { available: !!navigator.gpu };
+  if (!navigator.gpu) { s.ok = false; s.summary = '非対応（navigator.gpu がありません）'; return; }
+  const adapter = await getAdapter();
+  if (!adapter) { s.ok = false; s.summary = 'GPUを取得できません'; return; }
+  let info = adapter.info;
+  if (!info && adapter.requestAdapterInfo) { try { info = await adapter.requestAdapterInfo(); } catch (e) {} }
+  s.data.adapter = info ? [info.vendor, info.architecture, info.device, info.description].filter(Boolean).join(' / ') || '非公開' : '非公開';
+  s.data.features = [...adapter.features].sort();
+  s.data.shaderF16 = adapter.features.has('shader-f16');
+  s.data.limits = {};
+  for (const k of LIMIT_KEYS) s.data.limits[k] = adapter.limits[k];
+  try { s.data.computeF32 = await computeCheck(adapter, false); } catch (e) { s.data.computeF32 = '失敗: ' + e.message; }
+  if (s.data.shaderF16) {
+    try { s.data.computeF16 = await computeCheck(await getAdapter(), true); } catch (e) { s.data.computeF16 = '失敗: ' + e.message; }
+  } else s.data.computeF16 = '非対応';
+  s.ok = s.data.computeF32 === 'OK';
+  s.f16ok = s.data.computeF16 === 'OK';
+  s.summary = `計算 ${s.data.computeF32} / 半精度(f16) ${s.data.computeF16}`;
+}
+
+// ════════════════ 3. 保存 ════════════════
+// Safari は長らくメインスレッドの createWritable に非対応だったため、Worker の同期ハンドルも試す
+const OPFS_WORKER = `
+self.onmessage = async e => {
+  const { name, mb } = e.data; const MB = 1048576;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const fh = await root.getFileHandle(name, { create: true });
+    const h = await fh.createSyncAccessHandle();
+    const chunk = new Uint8Array(8 * MB); for (let i = 0; i < chunk.length; i += 4096) chunk[i] = (i >> 12) & 255;
+    let off = 0; const t0 = performance.now();
+    while (off < mb * MB) { const n = Math.min(chunk.length, mb * MB - off); h.write(chunk.subarray(0, n), { at: off }); off += n; }
+    h.flush(); const size = h.getSize(); h.close();
+    await root.removeEntry(name);
+    postMessage({ ok: size === mb * MB, size, ms: performance.now() - t0 });
+  } catch (err) { postMessage({ ok: false, error: String(err && err.message || err) }); }
+};`;
+async function opfsMain(mb) {
+  const root = await navigator.storage.getDirectory();
+  const name = 'lgo-diag-main.bin';
+  const fh = await root.getFileHandle(name, { create: true });
+  if (!fh.createWritable) throw new Error('createWritable 非対応');
+  const w = await fh.createWritable();
+  const chunk = new Uint8Array(8 * MB); for (let i = 0; i < chunk.length; i += 4096) chunk[i] = (i >> 12) & 255;
+  const t0 = performance.now();
+  for (let off = 0; off < mb * MB; off += chunk.length) await w.write(chunk.subarray(0, Math.min(chunk.length, mb * MB - off)));
+  await w.close();
+  const f = await fh.getFile();
+  const head = new Uint8Array(await f.slice(4096, 4097).arrayBuffer())[0];
+  await root.removeEntry(name);
+  if (f.size !== mb * MB || head !== 1) throw new Error(`読み戻し不一致 (size=${f.size})`);
+  return performance.now() - t0;
+}
+function opfsWorker(mb) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([OPFS_WORKER], { type: 'text/javascript' }));
+    const w = new Worker(url);
+    const done = fn => v => { w.terminate(); URL.revokeObjectURL(url); fn(v); };
+    w.onmessage = e => e.data.ok ? done(resolve)(e.data.ms) : done(reject)(new Error(e.data.error || 'サイズ不一致'));
+    w.onerror = e => done(reject)(new Error(e.message || 'Worker エラー'));
+    w.postMessage({ name: 'lgo-diag-worker.bin', mb });
+    setTimeout(() => done(reject)(new Error('60秒以内に終わりませんでした')), 60000);
+  });
+}
+async function stepStorage(s) {
+  s.data = {};
+  if (navigator.storage && navigator.storage.estimate) {
+    const e = await navigator.storage.estimate();
+    s.data.quotaMB = Math.round((e.quota || 0) / MB);
+    s.data.usageMB = Math.round((e.usage || 0) / MB);
+    s.data.freeMB  = s.data.quotaMB - s.data.usageMB;
+  } else s.data.freeMB = 0;
+  try { s.data.persist = navigator.storage.persist ? await navigator.storage.persist() : '非対応'; } catch (e) { s.data.persist = '失敗: ' + e.message; }
+  if (!(navigator.storage && navigator.storage.getDirectory)) {
+    s.data.opfsMain = s.data.opfsWorker = '非対応（OPFSなし）';
+  } else {
+    const speed = ms => `OK（${CAP.opfs}MB を ${(ms / 1000).toFixed(1)}秒 = ${Math.round(CAP.opfs / (ms / 1000))} MB/秒）`;
+    try { s.data.opfsMain = speed(await opfsMain(CAP.opfs)); } catch (e) { s.data.opfsMain = '失敗: ' + e.message; }
+    try { s.data.opfsWorker = speed(await opfsWorker(CAP.opfs)); } catch (e) { s.data.opfsWorker = '失敗: ' + e.message; }
+  }
+  s.opfsOk = /^OK/.test(s.data.opfsMain) || /^OK/.test(s.data.opfsWorker);
+  s.ok = s.opfsOk && s.data.freeMB > 0;
+  s.summary = `空き ${fmtMB(s.data.freeMB)} / 書き込み ${s.opfsOk ? 'OK' : '失敗'}`;
+}
+
+// ════════════════ 4. ネットワーク ════════════════
+async function probe(url, headers) {
+  const ac = new AbortController(); const to = setTimeout(() => ac.abort(), 15000);
+  try {
+    const t0 = performance.now();
+    const r = await fetch(url, { headers, signal: ac.signal, cache: 'no-store' });
+    const body = await r.arrayBuffer();
+    return { status: r.status, bytes: body.byteLength, ms: Math.round(performance.now() - t0),
+             contentRange: r.headers.get('content-range'), contentLength: r.headers.get('content-length'),
+             finalHost: (() => { try { return new URL(r.url).host; } catch (e) { return ''; } })() };
+  } catch (e) { return { error: e.name === 'AbortError' ? '15秒でタイムアウト' : String(e.message || e) }; }
+  finally { clearTimeout(to); }
+}
+async function stepNetwork(s) {
+  s.data = { onLine: navigator.onLine };
+  s.data.get   = await probe(HF_SMALL);
+  s.data.range = await probe(HF_SMALL, { Range: 'bytes=0-99' });
+  s.data.other = await probe(HF_OTHER);
+  s.corsOk  = s.data.get.status === 200 && s.data.get.bytes > 0;
+  s.rangeOk = s.data.range.status === 206 && s.data.range.bytes === 100;
+  s.ok = s.corsOk;
+  s.summary = `取得 ${s.corsOk ? 'OK' : '失敗'} / 分割取得(Range) ${s.rangeOk ? 'OK' : '不可'}`;
+}
+
+// ════════════════ 5. 通常メモリ ════════════════
+async function stepJsMem(s, onProgress) {
+  const held = []; s.reachedMB = 0; s.capMB = CAP.js; save();
+  try {
+    while (s.reachedMB < CAP.js) {
+      const b = new Uint8Array(CHUNK_MB * MB);
+      fillRandom(b);
+      held.push(b);
+      s.reachedMB += CHUNK_MB; save(); onProgress(s.reachedMB / CAP.js);
+      await sleep(40);
+    }
+    s.stop = '上限まで確保できました';
+  } catch (e) { s.stop = '確保に失敗: ' + (e.message || e); }
+  held.length = 0;
+  s.ok = true;
+  s.summary = `${fmtMB(s.reachedMB)} まで確保`;
+  await sleep(1500);   // 解放を待ってから次（GPU試験）へ
+}
+
+// ════════════════ 6. GPUメモリ ════════════════
+async function stepGpuMem(s, onProgress) {
+  s.reachedMB = 0; s.capMB = CAP.gpu; save();
+  const adapter = await getAdapter().catch(() => null);
+  if (!adapter) { s.ok = false; s.stop = 'WebGPUが使えないため未実施'; s.summary = '未実施'; return; }
+  const device = await adapter.requestDevice();
+  let lost = null;
+  device.lost.then(i => { lost = (i && i.message) || 'GPUが切断されました'; });
+  const src = new Uint8Array(CHUNK_MB * MB); fillRandom(src);
+  const bufs = [];
+  try {
+    while (s.reachedMB < CAP.gpu) {
+      device.pushErrorScope('out-of-memory');
+      device.pushErrorScope('validation');
+      const b = device.createBuffer({ size: CHUNK_MB * MB, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+      device.queue.writeBuffer(b, 0, src);          // 実際に書き込んで、確保を確定させる
+      const [eVal, eOom] = [await device.popErrorScope(), await device.popErrorScope()];
+      await withTimeout(device.queue.onSubmittedWorkDone(), 15000, 'GPUへの書き込み');
+      if (lost)       { s.stop = 'GPUが切断されました: ' + lost; break; }
+      if (eOom)       { s.stop = 'GPUメモリ不足: ' + eOom.message; break; }
+      if (eVal)       { s.stop = 'GPUエラー: ' + eVal.message; break; }
+      bufs.push(b);
+      s.reachedMB += CHUNK_MB; save(); onProgress(s.reachedMB / CAP.gpu);
+      await sleep(40);
+    }
+    if (!s.stop) s.stop = '上限まで確保できました';
+  } catch (e) { s.stop = '中断: ' + (e.message || e); }
+  for (const b of bufs) { try { b.destroy(); } catch (e) {} }
+  try { device.destroy(); } catch (e) {}
+  s.ok = true;
+  s.summary = `${fmtMB(s.reachedMB)} まで確保`;
+}
+
+// ════════════════ 判定 ════════════════
+function judge() {
+  const st = state.steps, g = st.webgpu || {}, sto = st.storage || {}, js = st.jsmem || {}, gm = st.gpumem || {};
+  return TIERS.map(t => {
+    const why = [];
+    if (!g.ok)                 why.push('WebGPUが使えない');
+    else if (!g.f16ok)         why.push('半精度(f16)計算が使えない');
+    if ((gm.reachedMB || 0) < t.mb * 1.5) why.push(`GPUメモリ ${fmtMB(gm.reachedMB || 0)} ＜ 必要 ${fmtMB(t.mb * 1.5)}`);
+    if ((js.reachedMB || 0) < t.mb * 0.7) why.push(`通常メモリ ${fmtMB(js.reachedMB || 0)} ＜ 必要 ${fmtMB(t.mb * 0.7)}`);
+    if (((sto.data || {}).freeMB || 0) < t.mb * 2) why.push(`保存の空き ${fmtMB((sto.data || {}).freeMB || 0)} ＜ 必要 ${fmtMB(t.mb * 2)}`);
+    if (!sto.opfsOk)           why.push('端末への保存(OPFS)ができない');
+    return { ...t, ok: why.length === 0, why };
+  });
+}
+const allDone = () => STEPS.every(d => { const s = state.steps[d.id]; return s && (s.status === 'done' || s.status === 'crashed' || s.status === 'error'); });
+
+// ════════════════ 表示 ════════════════
+const ICON = { done: '✅', error: '⚠️', crashed: '💥', running: '⏳' };
+function bodyText(id, s) {
+  if (s.status === 'crashed') return `この試験の途中でページが強制終了されました（メモリ不足）。\n直前までに確保できた量: ${fmtMB(s.reachedMB || 0)}`;
+  if (s.status === 'error')   return 'エラー: ' + s.error;
+  const d = s.data || {};
+  switch (id) {
+    case 'device':  return Object.entries(d).map(([k, v]) => `${k}: ${v}`).join('\n');
+    case 'webgpu':  return !d.available ? 'navigator.gpu なし' :
+      `adapter: ${d.adapter}\nshader-f16: ${d.shaderF16}\n計算(f32): ${d.computeF32}\n計算(f16): ${d.computeF16}\n` +
+      Object.entries(d.limits || {}).map(([k, v]) => `${k}: ${v}`).join('\n') + `\nfeatures: ${(d.features || []).join(', ')}`;
+    case 'storage': return `割当: ${fmtMB(d.quotaMB || 0)} / 使用中: ${fmtMB(d.usageMB || 0)} / 空き: ${fmtMB(d.freeMB || 0)}\n永続化(persist): ${d.persist}\n書き込み(メイン): ${d.opfsMain}\n書き込み(Worker): ${d.opfsWorker}`;
+    case 'network': return `onLine: ${d.onLine}\n取得: ${JSON.stringify(d.get)}\n分割取得: ${JSON.stringify(d.range)}\n別リポジトリ: ${JSON.stringify(d.other)}`;
+    case 'jsmem': case 'gpumem': return `確保できた量: ${fmtMB(s.reachedMB || 0)}（試験の上限 ${fmtMB(s.capMB || 0)}）\n停止理由: ${s.stop || '—'}`;
+  }
+  return '';
+}
+function render() {
+  $('sections').innerHTML = STEPS.map(d => {
+    const s = state.steps[d.id];
+    const right = !s ? '未実施' : s.status === 'running' ? '<span class="run">実行中…</span>' : `${ICON[s.status] || ''} ${esc(s.summary || (s.status === 'crashed' ? '強制終了' : ''))}`;
+    const pct = s && s.status === 'running' && s.capMB ? Math.round((s.reachedMB || 0) / s.capMB * 100) : 0;
+    return `<div class="sec"><h3>${d.title}<span>${right}</span></h3>
+      <div class="bar" style="display:${s && s.status === 'running' && d.risky ? 'block' : 'none'}"><i id="bar-${d.id}" style="width:${pct}%"></i></div>
+      <div class="body">${s && s.status !== 'running' ? esc(bodyText(d.id, s)) : ''}</div></div>`;
+  }).join('');
+  const v = $('verdict');
+  if (allDone()) {
+    const j = judge(), best = j.find(t => t.ok);
+    v.style.display = 'block';
+    v.innerHTML = `<h2>判定: ${best ? `<span class="ok">${best.id}（${fmtMB(best.mb)}級）まで可</span>` : '<span class="ng">不可</span>'}</h2>` +
+      j.map(t => `<div class="tier">${t.ok ? '<span class="ok">○</span>' : '<span class="ng">×</span>'} <b>${t.id}</b> ${esc(t.name)}・${fmtMB(t.mb)}` +
+        (t.ok ? '' : `<span class="why">${esc(t.why.join(' ／ '))}</span>`) + '</div>').join('') +
+      (state.steps.network && !state.steps.network.corsOk ? '<div class="tier"><span class="ng">⚠</span> モデル配布元に接続できません。初回ダウンロードに支障が出ます。</div>' : '');
+    $('copyBtn').style.display = 'block';
+  } else { v.style.display = 'none'; $('copyBtn').style.display = 'none'; }
+  $('startBtn').disabled = state.inProgress;
+  $('startBtn').textContent = state.inProgress ? '⏳ 診断中…' : allDone() ? '✔ 診断済み' : '▶ 診断を開始';
+  if (allDone()) $('startBtn').disabled = true;
+}
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function reportText() {
+  const j = judge(), best = j.find(t => t.ok);
+  const lines = ['【LGO3 実機診断】 ' + new Date().toLocaleString('ja-JP'),
+    `判定: ${best ? best.id + '（' + fmtMB(best.mb) + '級）まで可' : '不可'}`,
+    ...j.map(t => `  ${t.ok ? '○' : '×'} ${t.id} ${t.name} ${fmtMB(t.mb)}${t.ok ? '' : ' … ' + t.why.join(' ／ ')}`), ''];
+  for (const d of STEPS) {
+    const s = state.steps[d.id]; if (!s) continue;
+    lines.push(`■ ${d.title} — ${s.status === 'crashed' ? '強制終了' : s.status === 'error' ? 'エラー' : s.summary || ''}`, bodyText(d.id, s), '');
+  }
+  return lines.join('\n');
+}
+async function copyReport() {
+  const text = reportText();
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e2) { ta.remove(); toast('コピーできませんでした'); return; }
+    ta.remove();
+  }
+  toast('✅ 結果をコピーしました。チャットに貼り付けてください');
+}
+
+// ════════════════ 実行 ════════════════
+async function runAll() {
+  state.inProgress = true; save(); render();
+  for (const d of STEPS) {
+    const prev = state.steps[d.id];
+    if (prev && prev.status !== 'running') continue;            // 済み
+    if (prev && prev.status === 'running') {                    // 前回この手順の途中でページが落ちた
+      prev.status = 'crashed'; save(); render(); continue;
+    }
+    const s = state.steps[d.id] = { status: 'running' };
+    save(); render();
+    try {
+      await d.run(s, frac => { const b = $('bar-' + d.id); if (b) b.style.width = Math.round(frac * 100) + '%'; });
+      s.status = 'done';
+    } catch (e) { s.status = 'error'; s.error = String(e && e.message || e); s.summary = 'エラー'; }
+    save(); render();
+    await sleep(150);
+  }
+  state.inProgress = false; save(); render();
+}
+
+$('startBtn').onclick = () => { if (!state.inProgress) runAll(); };
+$('resetBtn').onclick = () => { try { localStorage.removeItem(KEY); } catch (e) {} location.replace(location.pathname + location.search); };
+$('copyBtn').onclick = copyReport;
+render();
+// 診断の途中でページが落ちて開き直された場合は、続きから自動で再開する
+if (state.inProgress) { toast('前回の続きから再開します'); runAll(); }
+</script>
+</body>
+</html>

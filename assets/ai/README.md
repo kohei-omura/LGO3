@@ -21,7 +21,7 @@
 | `local-gen.js` | モデルの取得・保存・実行の管理（本アプリ独自） | — |
 | `local-gen-worker.js` | OPFS への保存・再開・SHA-256 検証を行う Worker（本アプリ独自） | — |
 | `local-gen-run-worker.js` | 生成を Worker で実行。重みを1個ずつ読んで GPU へ送る（本アプリ独自） | — |
-| `graphs/{M,S}/*.onnx` | 各モデルの「設計図」（重みなし・計1.9MB）。`tools/make_external_graph.py` で生成 | 元モデルに従う |
+| `graphs/{M,S}/*.onnx` | 各モデルの「設計図」（重みなし・計1.9MB）。`tools/make_external_graph.py` で生成し、文章部品は `tools/prune_graph.py` で使わない要約出力を除去 | 元モデルに従う |
 
 ### 設計図（外部データ方式）について
 モデル丸ごと（例: unet 647MB）を onnxruntime-web に渡すと、wasm メモリへ複製されて約2.4倍に膨らみ、
@@ -51,7 +51,7 @@ iPhone（Safari のページ上限 約1.9GB）で強制終了していました�
 - スケジューラ … diffusers `DPMSolverMultistepScheduler` と誤差 3e-6 以内で一致（4〜40工程）
 - ブラウザ（onnxruntime-web）と Node（onnxruntime-node）の出力 … 平均差 1/255
 
-### iPhone の強制終了への対策（実機テスト第1〜6回の結論）
+### iPhone の強制終了への対策（実機テスト第1〜7回の結論）
 iPhone の Safari は「JS のメモリ＋GPU のメモリ」の合計に約1.9GBの上限があると推定。描画の作業メモリは
 256×384 で約80MB・448×640 でも約625MB（グラフから計算）と小さく、問題は「モデルファイル（444〜647MB）を
 丸ごとメモリへ読んだ写しが、GPU へ送った後も残ること」だった。
@@ -64,4 +64,12 @@ iPhone の Safari は「JS のメモリ＋GPU のメモリ」の合計に約1.9G
 | GPU バッファ | 使い回し（bucket）をやめ、使用後すぐ解放（lazyRelease） |
 | GPU 接続の「つなぎ」 | onnxruntime-web 1.31 は最後のセッションを解放すると GPU 接続を破棄し、次の部品で作り直す。iPhone では文章部品→描画部品の切り替え直後の描画が毎回（通算10回）強制終了していたため、生成の間は極小モデル（x+x）のセッションを持ち続けて接続を保つ |
 
+| 文章部品の要約出力を除去 | `pooler_output` はアプリで使わないが、ArgMax（最大値の位置）→その位置での読み出しという、データ次第の計算をしていた。`last_hidden_state` だけを残す（WebGPU 半精度で完全一致を確認） |
+| 部品の URL に版 | Worker が読み込む部品だけ古い保存データが使われることがあったため、`?v=` を付ける（`local-gen.js` の `AV`、`index.html`、`diag-gen.html`、`sw.js` をそろえる） |
+
 出力は修正前と完全一致（Chromium・WebGPU／CPU とも）。
+
+#### 半精度 WebGPU の再現環境（開発用）
+Chromium 同梱の SwiftShader は半精度(f16)に非対応のため、Node.js ＋ Dawn（npm `webgpu`）＋ Mesa lavapipe
+（`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`）で、実際の軽量・標準モデルを WebGPU 半精度で通し生成できる。
+ここでは通し生成がエラーなく完了し、計算プログラム55個・GPU メモリ最大540MB（128×128）だった。

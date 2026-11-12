@@ -319,7 +319,9 @@
     };
   }
 
-  const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN };
+  const VERSION = '2026-11-13c';
+  const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
+                _withSession: withSession, _fromF32: fromF32 };   // _ 付きは診断用
   root.LocalGenCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

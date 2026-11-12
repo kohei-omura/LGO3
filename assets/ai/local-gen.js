@@ -43,6 +43,9 @@
 
   // テスト時のみ差し替え可能（配布元・実行方式・モデル定義）
   const ORT_Q = '?v=lgo3';   // 実行部品（LGO3 パッチ入り）を修正したら上げる。古いキャッシュを使わせない
+  // 本アプリの部品の版。URL に ?v= を付けて、古い保存データ（Service Worker・ブラウザのキャッシュ）を使わせない。
+  //   変えたら index.html / diag-gen.html の local-gen.js?v= と sw.js の ASSETS もそろえる
+  const AV = '2026-11-13c', VQ = '?v=' + AV;
   const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
                 epOptions: { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' },
                 useWorker: true,      // Worker で実行（重みを1個ずつ読む・終わったら Worker ごと捨てる）。不可なら従来どおり
@@ -112,7 +115,7 @@
   // ── ダウンロード（Worker） ──────────────────────────────────
   let _worker = null, _job = 0, _active = null;
   function worker() {
-    if (!_worker) _worker = new Worker(cfg.assetBase + 'local-gen-worker.js');
+    if (!_worker) _worker = new Worker(cfg.assetBase + 'local-gen-worker.js' + VQ);
     return _worker;
   }
   function runJob(dir, files, onProgress) {
@@ -154,8 +157,8 @@
   let _ortReady = null;
   function loadOrt() {
     if (!_ortReady) _ortReady = (async () => {
-      if (typeof LocalGenCore === 'undefined') await loadScript(cfg.assetBase + 'local-gen-core.js');
-      if (typeof ort === 'undefined') await loadScript(cfg.assetBase + 'ort/ort.webgpu.min.js');
+      if (typeof LocalGenCore === 'undefined') await loadScript(cfg.assetBase + 'local-gen-core.js' + VQ);
+      if (typeof ort === 'undefined') await loadScript(cfg.assetBase + 'ort/ort.webgpu.min.js' + VQ);
       { const b = new URL(cfg.assetBase + 'ort/', location.href).href;   // ?v= は実行部品を修正した時に古いキャッシュを使わせないため
       ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs' + ORT_Q, wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
       ort.env.wasm.numThreads = 1;             // SharedArrayBuffer が無い環境（GitHub Pages）でも動くように
@@ -181,7 +184,7 @@
       loadModel: async comp => {
         const f = await (await (await dirOf(id)).getFileHandle(comp + '.onnx')).getFile();
         if (!cfg.useGraphs) return new Uint8Array(await f.arrayBuffer());
-        const g = await fetch(`${cfg.assetBase}graphs/${id}/${comp}.onnx`);
+        const g = await fetch(`${cfg.assetBase}graphs/${id}/${comp}.onnx${VQ}`);
         if (!g.ok) throw new Error('設計図ファイルを読み込めません: ' + comp);
         const model = new Uint8Array(await g.arrayBuffer());
         return { model, externalData: [{ path: comp + '.onnx', data: new Uint8Array(await f.arrayBuffer()) }] };
@@ -210,7 +213,7 @@
   //   iPhone の Safari は「JS＋GPU」の合計メモリに上限があり、モデルファイルを丸ごと読むと
   //   GPU へ送った後も写しが残って上限を超えていた。Worker では重みを1個ずつ読み、
   //   1枚ごとに Worker を捨てるので、メモリが確実に返る
-  const WORKER = () => cfg.assetBase + 'local-gen-run-worker.js';
+  const WORKER = () => cfg.assetBase + 'local-gen-run-worker.js' + VQ;
   let _probe = null;
   function workerProbe() {
     if (_probe) return _probe;
@@ -229,7 +232,7 @@
     });
     return _probe;
   }
-  function runInWorker(id, o, size, steps) {
+  function runInWorker(id, o, size, steps, extra) {
     return new Promise((resolve, reject) => {
       const w = new Worker(WORKER());
       const fin = () => { try { w.terminate(); } catch (e) {} if (o.signal) o.signal.removeEventListener('abort', onAbort); };
@@ -244,11 +247,17 @@
       };
       w.onerror = e => { fin(); reject(new Error('Worker エラー: ' + (e.message || ''))); };
       const abs = p => new URL(cfg.assetBase + p, location.href).href;
-      w.postMessage({ cmd: 'generate', tier: id, root: ROOT_DIR, dtype: cfg.tiers[id].dtype,
-        ortBase: abs('ort/'), mjsQuery: ORT_Q, coreUrl: abs('local-gen-core.js'), graphBase: abs(`graphs/${id}/`),
+      w.postMessage(Object.assign({ cmd: 'generate', tier: id, root: ROOT_DIR, dtype: cfg.tiers[id].dtype,
+        ortBase: abs('ort/'), mjsQuery: ORT_Q, coreUrl: abs('local-gen-core.js' + VQ), graphBase: abs(`graphs/${id}/`), assetQuery: VQ, expectVersion: AV,
         ep: cfg.ep, epOptions: cfg.epOptions, epFor: cfg.epFor, stream: cfg.stream, uploadMode: cfg.uploadMode, keepAlive: cfg.keepAlive, debug: !!o.onLog,
-        opts: { prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance, width: size.w, height: size.h } });
+        opts: { prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance, width: size.w, height: size.h } }, extra || {}));
     });
+  }
+  // 診断用: 部品を選んで Worker で動かす（diag-gen.html）
+  async function diagRun(tier, plan, onLog) {
+    const id = _ready[tier] ? tier : readyTier();
+    if (!id) throw new Error('端末内生成のモデルが保存されていません');
+    return (await runInWorker(id, { onLog }, { w: 0, h: 0 }, 0, { cmd: 'diag', plan })).diag;
   }
 
   // opts: { prompt, negative, seed, quality, signal, onProgress(phase, frac) }
@@ -275,14 +284,15 @@
 
   // オフラインで初めて生成する時に備え、実行部品を先に取得しておく（Service Worker が保存する）
   async function warmup() {
-    const files = ['local-gen.js', 'local-gen-worker.js', 'local-gen-run-worker.js', 'local-gen-core.js', 'ort/ort.webgpu.min.js', 'ort/ort-wasm-simd-threaded.asyncify.mjs' + ORT_Q,
-                   ...['M', 'S'].flatMap(t => ['text_encoder', 'unet', 'vae_decoder'].map(c => `graphs/${t}/${c}.onnx`)),
-                   'ort/ort-wasm-simd-threaded.asyncify.wasm', 'tf.min.js', 'tf-backend-webgpu.min.js', 'upscaler.min.js'];
+    const files = ['local-gen.js' + VQ, 'local-gen-worker.js' + VQ, 'local-gen-run-worker.js' + VQ, 'local-gen-core.js' + VQ,
+                   'ort/ort.webgpu.min.js' + VQ, 'ort/ort-wasm-simd-threaded.asyncify.mjs' + ORT_Q, 'ort/ort-wasm-simd-threaded.asyncify.wasm',
+                   ...['M', 'S'].flatMap(t => ['text_encoder', 'unet', 'vae_decoder'].map(c => `graphs/${t}/${c}.onnx${VQ}`)),
+                   'tf.min.js', 'tf-backend-webgpu.min.js', 'upscaler.min.js'];
     await Promise.all(files.map(f => fetch(cfg.assetBase + f).then(r => r.arrayBuffer()).catch(() => null)));
   }
 
   window.LOCAL_GEN = {
-    supported, status, download, abortDownload, remove, generate, warmup, workerProbe,
+    supported, status, download, abortDownload, remove, generate, warmup, workerProbe, diagRun, version: AV,
     isReady: () => !!readyTier(), readyTier, plans: PLANS,
     _configure: o => { Object.assign(cfg, o); _support = null; _probe = null; _ready = {}; for (const k of Object.keys(cfg.tiers)) _ready[k] = false; },
   };

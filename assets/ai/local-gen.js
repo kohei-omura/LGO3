@@ -42,8 +42,11 @@
   const FALLBACK_SIZE = { w: 384, h: 576 };   // メモリ不足で落ちた時に1回だけ縮めて再試行
 
   // テスト時のみ差し替え可能（配布元・実行方式・モデル定義）
+  const ORT_Q = '?v=lgo3';   // 実行部品（LGO3 パッチ入り）を修正したら上げる。古いキャッシュを使わせない
   const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
-                epOptions: { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' } };
+                epOptions: { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' },
+                useWorker: true,      // Worker で実行（重みを1個ずつ読む・終わったら Worker ごと捨てる）。不可なら従来どおり
+                stream: true };
 
   const loadScript = src => new Promise((res, rej) => {
     const s = document.createElement('script');
@@ -154,7 +157,7 @@
       if (typeof LocalGenCore === 'undefined') await loadScript(cfg.assetBase + 'local-gen-core.js');
       if (typeof ort === 'undefined') await loadScript(cfg.assetBase + 'ort/ort.webgpu.min.js');
       { const b = new URL(cfg.assetBase + 'ort/', location.href).href;   // ?v= は実行部品を修正した時に古いキャッシュを使わせないため
-      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs?v=lgo2', wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
+      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs' + ORT_Q, wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
       ort.env.wasm.numThreads = 1;             // SharedArrayBuffer が無い環境（GitHub Pages）でも動くように
       ort.env.logLevel = 'error';
       try { ort.env.webgpu.powerPreference = 'high-performance'; } catch (e) {}
@@ -199,14 +202,60 @@
   }
   const isOom = e => /memory|out of|device.*lost|lost|allocation|RangeError|OOM/i.test(String(e && (e.message || e)));
 
+  // ── Worker で実行（iPhone の強制終了対策） ───────────────────
+  //   iPhone の Safari は「JS＋GPU」の合計メモリに上限があり、モデルファイルを丸ごと読むと
+  //   GPU へ送った後も写しが残って上限を超えていた。Worker では重みを1個ずつ読み、
+  //   1枚ごとに Worker を捨てるので、メモリが確実に返る
+  const WORKER = () => cfg.assetBase + 'local-gen-run-worker.js';
+  let _probe = null;
+  function workerProbe() {
+    if (_probe) return _probe;
+    _probe = new Promise(res => {
+      let w;
+      try { w = new Worker(WORKER()); } catch (e) { res({ ok: false, reason: 'Worker を作れません' }); return; }
+      const end = r => { clearTimeout(t); try { w.terminate(); } catch (e) {} res(r); };
+      const t = setTimeout(() => end({ ok: false, reason: 'Worker が応答しません' }), 10000);
+      w.onerror = e => end({ ok: false, reason: 'Worker エラー: ' + (e.message || '') });
+      w.onmessage = e => {
+        const d = e.data, needF16 = Object.values(cfg.tiers).some(t => t.dtype === 'float16');
+        const ok = d.sync && (cfg.ep !== 'webgpu' || (d.gpu && d.adapter && (!needF16 || d.f16)));
+        end(Object.assign({ ok, reason: ok ? '' : !d.sync ? 'Worker で同期ファイル読み込み不可' : !d.gpu ? 'Worker で WebGPU 不可' : 'Worker で GPU/半精度 不可' }, d));
+      };
+      w.postMessage({ cmd: 'probe', ep: cfg.ep });
+    });
+    return _probe;
+  }
+  function runInWorker(id, o, size, steps) {
+    return new Promise((resolve, reject) => {
+      const w = new Worker(WORKER());
+      const fin = () => { try { w.terminate(); } catch (e) {} if (o.signal) o.signal.removeEventListener('abort', onAbort); };
+      const onAbort = () => { fin(); const e = new Error('中断しました'); e.name = 'AbortError'; reject(e); };
+      if (o.signal) { if (o.signal.aborted) { onAbort(); return; } o.signal.addEventListener('abort', onAbort); }
+      w.onmessage = e => {
+        const d = e.data;
+        if (d.type === 'progress') { if (o.onProgress) o.onProgress(d.ph, d.f); }
+        else if (d.type === 'done') { fin(); resolve(d.r); }
+        else if (d.type === 'error') { fin(); const er = new Error(d.message); er.name = d.name || 'Error'; reject(er); }
+      };
+      w.onerror = e => { fin(); reject(new Error('Worker エラー: ' + (e.message || ''))); };
+      const abs = p => new URL(cfg.assetBase + p, location.href).href;
+      w.postMessage({ cmd: 'generate', tier: id, root: ROOT_DIR, dtype: cfg.tiers[id].dtype,
+        ortBase: abs('ort/'), mjsQuery: ORT_Q, coreUrl: abs('local-gen-core.js'), graphBase: abs(`graphs/${id}/`),
+        ep: cfg.ep, epOptions: cfg.epOptions, epFor: cfg.epFor, stream: cfg.stream, uploadMode: cfg.uploadMode,
+        opts: { prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance, width: size.w, height: size.h } });
+    });
+  }
+
   // opts: { prompt, negative, seed, quality, signal, onProgress(phase, frac) }
   async function generate(o) {
     const id = (o.tier && _ready[o.tier]) ? o.tier : readyTier();
     if (!id) throw new Error('端末内生成のモデルが保存されていません');
-    await loadOrt();
     const plan = Object.assign({}, PLANS[o.quality] || PLANS.balanced, o.size || {});
-    const run = size => LocalGenCore.generate(makeEnv(id), {
-      prompt: o.prompt, negative: o.negative, seed: o.seed, steps: o.steps || plan.steps, guidance: o.guidance,
+    const steps = o.steps || plan.steps;
+    const useW = cfg.useWorker && cfg.useGraphs && (await workerProbe()).ok;
+    if (!useW) await loadOrt();
+    const run = size => useW ? runInWorker(id, o, size, steps) : LocalGenCore.generate(makeEnv(id), {
+      prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance,
       width: size.w, height: size.h, signal: o.signal, onProgress: o.onProgress });
     let r;
     try { r = await run(plan); }
@@ -216,20 +265,20 @@
       r = await run(FALLBACK_SIZE);
     }
     return { blob: await toBlob(r), width: r.width, height: r.height, tier: id, label: cfg.tiers[id].label,
-             msPerStep: r.msPerStep, ms: r.ms, truncated: r.truncated };
+             msPerStep: r.msPerStep, ms: r.ms, truncated: r.truncated, via: useW ? 'worker' : 'main' };
   }
 
   // オフラインで初めて生成する時に備え、実行部品を先に取得しておく（Service Worker が保存する）
   async function warmup() {
-    const files = ['local-gen.js', 'local-gen-worker.js', 'local-gen-core.js', 'ort/ort.webgpu.min.js', 'ort/ort-wasm-simd-threaded.asyncify.mjs?v=lgo2',
+    const files = ['local-gen.js', 'local-gen-worker.js', 'local-gen-run-worker.js', 'local-gen-core.js', 'ort/ort.webgpu.min.js', 'ort/ort-wasm-simd-threaded.asyncify.mjs' + ORT_Q,
                    ...['M', 'S'].flatMap(t => ['text_encoder', 'unet', 'vae_decoder'].map(c => `graphs/${t}/${c}.onnx`)),
                    'ort/ort-wasm-simd-threaded.asyncify.wasm', 'tf.min.js', 'tf-backend-webgpu.min.js', 'upscaler.min.js'];
     await Promise.all(files.map(f => fetch(cfg.assetBase + f).then(r => r.arrayBuffer()).catch(() => null)));
   }
 
   window.LOCAL_GEN = {
-    supported, status, download, abortDownload, remove, generate, warmup,
+    supported, status, download, abortDownload, remove, generate, warmup, workerProbe,
     isReady: () => !!readyTier(), readyTier, plans: PLANS,
-    _configure: o => { Object.assign(cfg, o); _support = null; _ready = {}; for (const k of Object.keys(cfg.tiers)) _ready[k] = false; },
+    _configure: o => { Object.assign(cfg, o); _support = null; _probe = null; _ready = {}; for (const k of Object.keys(cfg.tiers)) _ready[k] = false; },
   };
 })();

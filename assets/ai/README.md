@@ -16,10 +16,11 @@
 | ファイル | 由来 | ライセンス |
 | --- | --- | --- |
 | `ort/ort.webgpu.min.js` | onnxruntime-web 1.31.1（WebGPU 版） | MIT |
-| `ort/ort-wasm-simd-threaded.asyncify.{mjs,wasm}` | onnxruntime-web 1.31.1 の実行部 | MIT |
+| `ort/ort-wasm-simd-threaded.asyncify.{mjs,wasm}` | onnxruntime-web 1.31.1 の実行部（`.mjs` に「LGO3」と書いた小さな修正あり。下記） | MIT |
 | `local-gen-core.js` | CLIP トークナイザ／DPM-Solver++ 2M／生成パイプライン（本アプリ独自） | — |
 | `local-gen.js` | モデルの取得・保存・実行の管理（本アプリ独自） | — |
 | `local-gen-worker.js` | OPFS への保存・再開・SHA-256 検証を行う Worker（本アプリ独自） | — |
+| `local-gen-run-worker.js` | 生成を Worker で実行。重みを1個ずつ読んで GPU へ送る（本アプリ独自） | — |
 | `graphs/{M,S}/*.onnx` | 各モデルの「設計図」（重みなし・計1.9MB）。`tools/make_external_graph.py` で生成 | 元モデルに従う |
 
 ### 設計図（外部データ方式）について
@@ -49,3 +50,17 @@ iPhone（Safari のページ上限 約1.9GB）で強制終了していました�
 - トークナイザ … Hugging Face `tokenizers` と 6/6 一致（日本語・記号・特殊トークン含む）
 - スケジューラ … diffusers `DPMSolverMultistepScheduler` と誤差 3e-6 以内で一致（4〜40工程）
 - ブラウザ（onnxruntime-web）と Node（onnxruntime-node）の出力 … 平均差 1/255
+
+### iPhone の強制終了への対策（実機テスト第1〜5回の結論）
+iPhone の Safari は「JS のメモリ＋GPU のメモリ」の合計に約1.9GBの上限があると推定。描画の作業メモリは
+256×384 で約80MB・448×640 でも約625MB（グラフから計算）と小さく、問題は「モデルファイル（444〜647MB）を
+丸ごとメモリへ読んだ写しが、GPU へ送った後も残ること」だった。
+
+| 対策 | 内容 |
+| --- | --- |
+| Worker で実行 | 1枚ごとに Worker を作って捨てる → GPU を含むメモリが確実に返る |
+| 重みを1個ずつ読む | OPFS の同期ハンドルで必要な分だけ読み、作業用の1枚を使い回す（最大56MB） |
+| `.mjs` の修正（LGO3） | 外部データの読み出しを `readSlice` に対応／転送方式を切替可能に（既定は元の方式） |
+| GPU バッファ | 使い回し（bucket）をやめ、使用後すぐ解放（lazyRelease） |
+
+出力は修正前と完全一致（Chromium・WebGPU／CPU とも）。

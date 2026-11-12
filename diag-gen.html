@@ -83,19 +83,20 @@ const STEPS = [
   { id: 'gpuC',    title: '5. GPU転送 C（onnxruntime と同じ方式）',      run: s => stepGpu(s, 'C'), risky: true },
   { id: 'ort',     title: '6. 本番と同じ読込（onnxruntime）',            run: stepOrt,    risky: true },
 ];
-// 第4回の実機結果: 対策後の通し生成は 256×384 でも「描画の1回目」直前で強制終了（第3回の単体は成功）。
-// 第3回からの違い = ①転送方式(writeBuffer) ②描画の前に文章部品を作って片付けた。どちらが原因かを切り分ける。
-// すべて 使い回しOFF(lazyRelease)・毎回ページを開き直してから実行
-const SZ = Q.get('sizes') ? Q.get('sizes').split(',').map(x => x.split('x').map(Number)) : [[256, 384], [320, 448], [384, 576]];
-const M = [
-  { id: 'm1', t: `描画部品だけ ${SZ[0].join('×')}・元の転送（第3回の成功と同じ条件）`, unet: true,  up: 'mapped', size: SZ[0] },
-  { id: 'm2', t: `描画部品だけ ${SZ[0].join('×')}・写しなし転送`,                     unet: true,  up: 'write',  size: SZ[0] },
-  { id: 'm3', t: `通しの生成 ${SZ[0].join('×')}・元の転送`,                            unet: false, up: 'mapped', size: SZ[0] },
-  { id: 'm4', t: `通しの生成 ${SZ[0].join('×')}・元の転送・文章部品はCPU`,             unet: false, up: 'mapped', size: SZ[0], teCpu: true },
-  { id: 'm5', t: `描画部品だけ ${SZ[1].join('×')}・元の転送`,                          unet: true,  up: 'mapped', size: SZ[1] },
-  { id: 'm6', t: `描画部品だけ ${SZ[2].join('×')}・元の転送`,                          unet: true,  up: 'mapped', size: SZ[2] },
+// 第5回の実機結果: 256×384 失敗・320×448 成功・384×576 作成中に失敗と、サイズと無関係にばらつく。
+// 描画の作業メモリは 256×384 で約80MB（グラフから計算）と小さい → 原因は「モデルファイルの写し(444MB)が
+// JS側に残ること」と推定（iPhone の Safari は JS＋GPU の合計に上限）。
+// 対策: Worker で重みを1個ずつ読んで GPU へ送り、1枚ごとに Worker を捨てる。ここではその本番処理を試す
+const W = [
+  { id: 'w1', t: '軽量 256×384（2工程）',  tier: 'S', size: [256, 384], steps: 2 },
+  { id: 'w2', t: '軽量 384×576（2工程）',  tier: 'S', size: [384, 576], steps: 2 },
+  { id: 'w3', t: '軽量 448×640（2工程）',  tier: 'S', size: [448, 640], steps: 2 },
+  { id: 'w4', t: '標準 448×640（2工程）',  tier: 'M', size: [448, 640], steps: 2 },
+  { id: 'w5', t: '本番どおり 軽量 448×640・18工程', tier: 'S', size: [448, 640], steps: 18 },
 ];
-M.forEach((m, i) => STEPS.push({ id: m.id, title: `${7 + i}. ${m.t}`, run: s => stepMatrix(s, m), reloadBefore: true, m }));
+if (Q.get('sizes')) { const z = Q.get('sizes').split(',').map(x => x.split('x').map(Number)); W.forEach((w, i) => { w.size = z[Math.min(i, z.length - 1)]; w.t = w.t.replace(/\d+×\d+/, w.size.join('×')); }); }
+STEPS.push({ id: 'w0', title: '7. Worker で動かせるか', run: stepProbe });
+W.forEach((w, i) => STEPS.push({ id: w.id, title: `${8 + i}. ${w.t}`, run: s => stepWorkerGen(s, w), reloadBefore: true, w }));
 let state = load() || { v: 1, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
@@ -239,7 +240,7 @@ async function prepOrt(s) {
   if (!window.ort) await loadScript('assets/ai/ort/ort.webgpu.min.js');
   if (!window.LocalGenCore) await loadScript('assets/ai/local-gen-core.js');
   { const b = new URL('assets/ai/ort/', location.href).href;   // ?v= は実行部品を修正した時に古いキャッシュを使わせないため
-      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs?v=lgo2', wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
+      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs?v=lgo3', wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
   ort.env.wasm.numThreads = 1; ort.env.logLevel = 'error';
 }
 async function createUnet(s, lh, lw, epOpts) {
@@ -278,50 +279,48 @@ async function stepOrt(s) {
   await sess.release(); sess = null;
   s.ok = bad === 0; s.summary = bad ? `出力に異常値 ${bad}個` : 'OK（作成・実行とも成功）';
 }
-// 7〜12. 条件を変えて1工程ぶん（2回実行）を試す
-const LAZY = { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' };
+// 7〜. Worker での本番生成
 const PH = { 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章部品の作成完了', text: '文章の解析',
   'unet:load': '描画部品の読込', 'unet:run': '描画部品の作成完了→描画開始', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ部品の作成完了', vae: '仕上げ' };
-async function stepMatrix(s, m) {
-  globalThis.LGO_ORT_UPLOAD = m.up;
-  const [w, h] = m.size;
-  if (m.unet) {
-    await prepOrt(s);
-    let sess = await createUnet(s, h / 8, w / 8, LAZY);
-    await sleep(300);
-    const ms = [];
-    for (let k = 1; k <= 2; k++) {
-      mark(s, `${k}回目の実行中…`); await sleep(100);
-      const t = performance.now();
-      const bad = await runUnet(sess, h / 8, w / 8);
-      ms.push(performance.now() - t);
-      if (bad) throw new Error('出力に異常値 ' + bad + '個');
-      mark(s, `${k}回目 完了（${(ms[k - 1] / 1000).toFixed(1)}秒）`); await sleep(300);
-    }
-    mark(s, '片付け開始'); await sleep(100);
-    await sess.release(); sess = null;
-    mark(s, '片付け完了 → 待機（2秒）'); await sleep(2000);
-    mark(s, '片付け後も生存');
-    s.ok = true; s.summary = `OK（1工程 約${((ms[0] + ms[1]) / 1000).toFixed(1)}秒）`;
-    return;
-  }
+async function useLocalGen() {
   if (!window.LOCAL_GEN) await loadScript('assets/ai/local-gen.js');
-  LOCAL_GEN._configure(Object.assign({ epOptions: LAZY, epFor: m.teCpu ? { text_encoder: 'wasm' } : {} }, Q.get('ep') ? { ep: Q.get('ep') } : {}));
+  if (Q.get('ep')) LOCAL_GEN._configure({ ep: Q.get('ep') });
   await LOCAL_GEN.status();
-  let last = '';
-  mark(s, `${w}×${h} 生成開始`); await sleep(100);
+}
+async function stepProbe(s) {
+  await useLocalGen();
+  const p = await LOCAL_GEN.workerProbe();
+  s.data = { 'Worker で WebGPU': p.gpu ? 'あり' : 'なし', 'GPU 取得': p.adapter ? 'OK' : '—', '半精度(f16)': p.f16 ? 'OK' : '—', '同期ファイル読み込み': p.sync ? 'OK' : 'なし' };
+  s.ok = p.ok; s.summary = p.ok ? 'OK（新方式で実行できます）' : '不可: ' + p.reason;
+}
+async function stepWorkerGen(s, w) {
+  await useLocalGen();
+  const st = await LOCAL_GEN.status();
+  if (!st.tiers[w.tier] || !st.tiers[w.tier].ready) throw new Error((w.tier === 'M' ? '標準' : '軽量') + 'モデルが保存されていないため省略');
+  const [W_, H_] = w.size;
+  let last = '', stepT = performance.now();
+  mark(s, `${W_}×${H_} 生成開始`); await sleep(100);
   const t0 = performance.now();
   const r = await LOCAL_GEN.generate({ prompt: 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', negative: 'lowres, bad anatomy',
-    seed: 1234, tier: state.tier, size: { w, h }, steps: 1,
+    seed: 1234, tier: w.tier, size: { w: W_, h: H_ }, steps: w.steps,
     onProgress: (ph, f) => {
       const k = ph + Math.round(f * 100); if (k === last) return; last = k;
+      if (ph === 'unet' && w.steps > 4 && f < 1 && Math.round(f * w.steps) % 6) return;   // 長い時は記録を間引く
       mark(s, ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : ''));
     } });
-  if (r.width !== w) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);
-  mark(s, `完了（全体 ${((performance.now() - t0) / 1000).toFixed(1)}秒）`);
+  if (r.width !== W_) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);
+  mark(s, `完了（全体 ${((performance.now() - t0) / 1000).toFixed(1)}秒・1工程 ${(r.msPerStep / 1000).toFixed(1)}秒・${r.via === 'worker' ? '新方式' : '従来方式'}）`);
+  // 出来た画像を小さく表示（目視確認用）
+  try {   // 記録（localStorage）を圧迫しないよう、ごく小さいJPEGにする
+    const bm = await createImageBitmap(r.blob), cv = document.createElement('canvas');
+    cv.width = 72; cv.height = Math.round(72 * r.height / r.width);
+    cv.getContext('2d').drawImage(bm, 0, 0, cv.width, cv.height);
+    s.thumb = cv.toDataURL('image/jpeg', 0.7);
+  } catch (e) {}
   await sleep(2000);
   mark(s, '完了後 2秒 生存');
-  s.ok = true; s.summary = `OK（1工程 ${(r.msPerStep / 1000).toFixed(1)}秒）`;
+  s.ok = true; s.via = r.via; s.msPerStep = r.msPerStep;
+  s.summary = `OK（1工程 ${(r.msPerStep / 1000).toFixed(1)}秒・${r.via === 'worker' ? '新方式' : '従来方式'}）`;
 }
 
 // ════════════════ 判定 ════════════════
@@ -334,19 +333,16 @@ function verdict() {
   if (bad('gpuA')) return '区切って送っても落ちる → GPUへ送った量そのものが上限超え（より小さいモデルが必要）';
   if (bad('gpuB') || bad('gpuC')) return '連続で送ると落ちる → 区切って送れば回避できる見込み（部品を分割して読み込む修正で対応可）';
   if (bad('ort')) return '転送は問題なし → onnxruntime 内部（最適化処理など）で落ちている';
-  const at = id => !st[id] ? '未実施' : st[id].status === 'crashed' ? `💥（${st[id].mark || '?'}）` : st[id].status === 'error' ? `⚠（${st[id].error}）` : '○';
-  const lines = M.map(m => `${m.id}. ${m.t}: ${at(m.id)}`);
+  const at = id => !st[id] ? '未実施' : st[id].status === 'crashed' ? `💥（${st[id].mark || '?'}）` : st[id].status === 'error' ? `⚠（${st[id].error}）` : `○ ${st[id].summary || ''}`;
+  const lines = [`Worker: ${st.w0 ? (st.w0.ok ? '○' : '× ' + st.w0.summary) : '未実施'}`, ...W.map(w => `${w.t}: ${at(w.id)}`)];
   const ok = id => st[id] && st[id].status === 'done';
-  const ng = id => st[id] && st[id].status === 'crashed';            // 強制終了（エラーで止まったものは含めない）
   const msg = [];
-  if (ok('m1') && ng('m2')) msg.push('写しなし転送が逆効果 → 元の転送に戻す（済）');
-  if (ok('m1') && ng('m3') && ok('m4')) msg.push('文章部品のGPU使用が原因 → 文章部品をCPUで動かせば解決');
-  if (ok('m1') && ng('m3') && ng('m4')) msg.push('通しの生成では、描画の前の処理が残したメモリが原因');
-  if (ok('m3') && ng('m2')) msg.push('通しの生成も成功 → 前回の失敗は写しなし転送が原因');
-  if (ok('m3') && ok('m2')) msg.push('今回は全条件で成功 → 前回の失敗は端末の状態（空きメモリ）に左右された可能性');
-  if (ng('m1')) msg.push('第3回の成功条件でも失敗 → 端末の状態（他アプリ・空きメモリ）に左右されている可能性');
-  const big = [['m6', SZ[2]], ['m5', SZ[1]], ['m1', SZ[0]]].find(([id]) => ok(id));
-  msg.push(big ? `描画部品だけなら ${big[1].join('×')} まで動作` : `描画部品だけでも ${SZ[0].join('×')} で失敗`);
+  if (st.w0 && !st.w0.ok) msg.push('この端末では新方式（Worker）が使えず、従来方式で実行');
+  const okList = W.filter(w => ok(w.id));
+  if (ok('w5')) msg.push('本番どおりの生成に成功 → アプリでも端末内生成が使えます');
+  else if (okList.length) msg.push('成功: ' + okList.map(w => w.t.split('（')[0]).join('・'));
+  else if (W.some(w => st[w.id] && st[w.id].status === 'crashed')) msg.push('新方式でも強制終了 → 別の対策が必要');
+  else msg.push('実行できませんでした（上のエラーを確認）');
   return lines.join('\n') + '\n→ ' + msg.join('\n→ ');
 }
 
@@ -367,7 +363,7 @@ function render() {
     const pct = s && s.status === 'running' && s.capMB ? Math.round((s.reachedMB || 0) / s.capMB * 100) : 0;
     return `<div class="sec"><h3>${d.title}<span>${right}</span></h3>
       <div class="bar" style="display:${s && s.status === 'running' && s.capMB ? 'block' : 'none'}"><i style="width:${pct}%"></i></div>
-      <div class="body">${s && s.status !== 'running' ? esc(bodyText(s)) : ''}</div></div>`;
+      <div class="body">${s && s.status !== 'running' ? esc(bodyText(s)) : ''}</div>${s && s.thumb ? `<img src="${s.thumb}" alt="" style="width:96px;border-radius:8px;margin-top:6px">` : ''}</div>`;
   }).join('');
   $('tierName').textContent = state.tier ? `${state.tier} ${TIER_LABEL[state.tier]}` : '（開始時に決定）';
   const v = $('verdict');

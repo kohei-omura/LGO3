@@ -203,7 +203,8 @@
   // ════════════════════════════════════════════════════════════
   //  生成パイプライン
   //    env.ort          : onnxruntime（web / node）
-  //    env.loadModel(c) : 部品名 → セッション作成に渡せるもの（Uint8Array / ファイルパス）
+  //    env.loadModel(c) : 部品名 → セッション作成に渡せるもの（Uint8Array / ファイルパス /
+  //                       { model, externalData, done? }。done は作成後に呼ばれる）
   //    env.loadTokenizer(): { vocab, merges }
   //    env.sessionOptions(c, dims): セッションオプション
   //    env.dtype        : 'float16' | 'float32'
@@ -215,9 +216,11 @@
   async function withSession(env, comp, dims, fn, prog) {
     if (prog) prog(comp + ':load', 0);
     let src = await env.loadModel(comp);
-    let opts = env.sessionOptions(comp, dims);
-    if (src && src.model) { opts = Object.assign({}, opts, { externalData: src.externalData }); src = src.model; }
-    let s = await env.ort.InferenceSession.create(src, opts);
+    let opts = env.sessionOptions(comp, dims), done = null;
+    if (src && src.model) { opts = Object.assign({}, opts, { externalData: src.externalData }); done = src.done; src = src.model; }
+    let s;
+    try { s = await env.ort.InferenceSession.create(src, opts); }
+    finally { if (done) { try { done(); } catch (e) {} } }   // 読み出し係の後始末（ファイルを閉じる等）
     src = null; opts = null;                       // 重みのコピーを手放して GC に回収させる
     if (prog) prog(comp + ':run', 0);              // 作成完了 → ここから実行（落ちた段階の切り分け用）
     try { return await fn(s); }

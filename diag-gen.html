@@ -83,16 +83,16 @@ const STEPS = [
   { id: 'gpuC',    title: '5. GPU転送 C（onnxruntime と同じ方式）',      run: s => stepGpu(s, 'C'), risky: true },
   { id: 'ort',     title: '6. 本番と同じ読込（onnxruntime）',            run: stepOrt,    risky: true },
 ];
-// 第5回の実機結果: 256×384 失敗・320×448 成功・384×576 作成中に失敗と、サイズと無関係にばらつく。
-// 描画の作業メモリは 256×384 で約80MB（グラフから計算）と小さい → 原因は「モデルファイルの写し(444MB)が
-// JS側に残ること」と推定（iPhone の Safari は JS＋GPU の合計に上限）。
-// 対策: Worker で重みを1個ずつ読んで GPU へ送り、1枚ごとに Worker を捨てる。ここではその本番処理を試す
+// 第6回の実機結果: 新方式（Worker・重みを1個ずつ）でも、通しの生成は全サイズ・両モデルで
+// 「描画の1回目」で強制終了（第4回から通算10回、例外なし）。描画部品だけなら成功することがある。
+// Chromium で調べると、onnxruntime は文章部品を片付けた時に GPU 接続を破棄し、描画部品で作り直していた。
+// 対策: 生成の間は小さな「つなぎ」のセッションを持ち、GPU 接続を最後まで保つ。ここではその効果を試す
 const W = [
-  { id: 'w1', t: '軽量 256×384（2工程）',  tier: 'S', size: [256, 384], steps: 2 },
-  { id: 'w2', t: '軽量 384×576（2工程）',  tier: 'S', size: [384, 576], steps: 2 },
-  { id: 'w3', t: '軽量 448×640（2工程）',  tier: 'S', size: [448, 640], steps: 2 },
-  { id: 'w4', t: '標準 448×640（2工程）',  tier: 'M', size: [448, 640], steps: 2 },
-  { id: 'w5', t: '本番どおり 軽量 448×640・18工程', tier: 'S', size: [448, 640], steps: 18 },
+  { id: 'k1', t: '軽量 256×384（2工程）',  tier: 'S', size: [256, 384], steps: 2 },
+  { id: 'k2', t: '軽量 448×640（2工程）',  tier: 'S', size: [448, 640], steps: 2 },
+  { id: 'k3', t: '標準 448×640（2工程）',  tier: 'M', size: [448, 640], steps: 2 },
+  { id: 'k4', t: '本番どおり 軽量 448×640・18工程', tier: 'S', size: [448, 640], steps: 18 },
+  { id: 'k5', t: '軽量 448×640（2工程）を2枚続けて', tier: 'S', size: [448, 640], steps: 2, count: 2 },
 ];
 if (Q.get('sizes')) { const z = Q.get('sizes').split(',').map(x => x.split('x').map(Number)); W.forEach((w, i) => { w.size = z[Math.min(i, z.length - 1)]; w.t = w.t.replace(/\d+×\d+/, w.size.join('×')); }); }
 STEPS.push({ id: 'w0', title: '7. Worker で動かせるか', run: stepProbe });
@@ -298,18 +298,24 @@ async function stepWorkerGen(s, w) {
   const st = await LOCAL_GEN.status();
   if (!st.tiers[w.tier] || !st.tiers[w.tier].ready) throw new Error((w.tier === 'M' ? '標準' : '軽量') + 'モデルが保存されていないため省略');
   const [W_, H_] = w.size;
-  let last = '', stepT = performance.now();
-  mark(s, `${W_}×${H_} 生成開始`); await sleep(100);
-  const t0 = performance.now();
-  const r = await LOCAL_GEN.generate({ prompt: 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', negative: 'lowres, bad anatomy',
-    seed: 1234, tier: w.tier, size: { w: W_, h: H_ }, steps: w.steps,
-    onProgress: (ph, f) => {
-      const k = ph + Math.round(f * 100); if (k === last) return; last = k;
-      if (ph === 'unet' && w.steps > 4 && f < 1 && Math.round(f * w.steps) % 6) return;   // 長い時は記録を間引く
-      mark(s, ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : ''));
-    } });
-  if (r.width !== W_) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);
-  mark(s, `完了（全体 ${((performance.now() - t0) / 1000).toFixed(1)}秒・1工程 ${(r.msPerStep / 1000).toFixed(1)}秒・${r.via === 'worker' ? '新方式' : '従来方式'}）`);
+  let r;
+  for (let c = 1; c <= (w.count || 1); c++) {
+    const tag = w.count > 1 ? `${c}枚目 ` : '';
+    let last = '';
+    mark(s, `${tag}${W_}×${H_} 生成開始`); await sleep(100);
+    const t0 = performance.now();
+    r = await LOCAL_GEN.generate({ prompt: 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', negative: 'lowres, bad anatomy',
+      seed: 1234 + c, tier: w.tier, size: { w: W_, h: H_ }, steps: w.steps,
+      onLog: text => mark(s, tag + '［' + text + '］'),
+      onProgress: (ph, f) => {
+        const k = ph + Math.round(f * 100); if (k === last) return; last = k;
+        if (ph === 'unet' && w.steps > 4 && f < 1 && Math.round(f * w.steps) % 6) return;   // 長い時は記録を間引く
+        mark(s, tag + (ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : '')));
+      } });
+    if (r.width !== W_) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);
+    mark(s, `${tag}完了（全体 ${((performance.now() - t0) / 1000).toFixed(1)}秒・1工程 ${(r.msPerStep / 1000).toFixed(1)}秒・${r.via === 'worker' ? '新方式' : '従来方式'}）`);
+    if (c < (w.count || 1)) await sleep(1000);
+  }
   // 出来た画像を小さく表示（目視確認用）
   try {   // 記録（localStorage）を圧迫しないよう、ごく小さいJPEGにする
     const bm = await createImageBitmap(r.blob), cv = document.createElement('canvas');
@@ -339,7 +345,7 @@ function verdict() {
   const msg = [];
   if (st.w0 && !st.w0.ok) msg.push('この端末では新方式（Worker）が使えず、従来方式で実行');
   const okList = W.filter(w => ok(w.id));
-  if (ok('w5')) msg.push('本番どおりの生成に成功 → アプリでも端末内生成が使えます');
+  if (ok('k4')) msg.push('本番どおりの生成に成功 → アプリでも端末内生成が使えます');
   else if (okList.length) msg.push('成功: ' + okList.map(w => w.t.split('（')[0]).join('・'));
   else if (W.some(w => st[w.id] && st[w.id].status === 'crashed')) msg.push('新方式でも強制終了 → 別の対策が必要');
   else msg.push('実行できませんでした（上のエラーを確認）');

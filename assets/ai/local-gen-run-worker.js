@@ -5,11 +5,12 @@
      ・ここでは OPFS の同期ハンドルで「重み1個ずつ」読み、GPU へ送ったらすぐ使い回す
        （onnxruntime の外部データ読み出しを readSlice に対応させてある: ort-wasm-*.mjs の LGO3 パッチ）
      ・1枚生成するごとに Worker ごと捨てるので、GPU も含めメモリが確実に返る
+     ・生成の間は GPU 接続を保つ（LocalGenCore.keepAlive。部品の切り替えで作り直すと iPhone で落ちる）
    メッセージ:
      → { cmd:'probe', ep }
      ← { type:'probe', gpu, adapter, f16, sync }
-     → { cmd:'generate', tier, root, dtype, ortBase, mjsQuery, graphBase, ep, epOptions, epFor, stream, opts }
-     ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name }
+     → { cmd:'generate', tier, root, dtype, ortBase, mjsQuery, graphBase, ep, epOptions, epFor, stream, keepAlive, opts }
+     ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name } / { type:'log', text }（debug 時）
    ════════════════════════════════════════════════════════════ */
 'use strict';
 
@@ -60,8 +61,15 @@ function makeReader(h) {
 }
 
 function makeEnv(m) {
+  const epOf = comp => {
+    const e0 = (m.epFor && m.epFor[comp]) || m.ep;
+    return e0 === 'webgpu' && m.epOptions ? Object.assign({ name: 'webgpu' }, m.epOptions) : e0;
+  };
+  // GPU 接続を生成の間ずっと保つ（部品の切り替えで作り直させない）
+  const ka = m.ep === 'webgpu' && m.keepAlive !== false ? LocalGenCore.keepAlive(ort, epOf('unet')) : null;
   return {
     ort, dtype: m.dtype,
+    begin: ka && ka.begin, end: ka && ka.end,
     loadModel: async comp => {
       const name = comp + '.onnx';
       const fh = await (await dirOf(m.root + '/' + m.tier)).getFileHandle(name);
@@ -86,10 +94,26 @@ function makeEnv(m) {
       const ov = comp === 'text_encoder' ? { batch_size: d.batch, sequence_length: 77 }
                : comp === 'unet'         ? { batch_size: d.batch, height: d.h, width: d.w, sequence_length: 77 }
                :                           { batch_size: d.batch, latent_height: d.h, latent_width: d.w };
-      const e0 = (m.epFor && m.epFor[comp]) || m.ep;
-      const ep = e0 === 'webgpu' && m.epOptions ? Object.assign({ name: 'webgpu' }, m.epOptions) : e0;
-      return { executionProviders: [ep], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 };
+      return { executionProviders: [epOf(comp)], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 };
     },
+  };
+}
+
+// 診断用: GPU 接続の作成・破棄とエラーを記録して知らせる（m.debug の時だけ）
+function traceGpu() {
+  if (!self.GPUAdapter || GPUAdapter.prototype.__lgoTraced) return;
+  GPUAdapter.prototype.__lgoTraced = true;
+  const log = text => self.postMessage({ type: 'log', text });
+  const orig = GPUAdapter.prototype.requestDevice;
+  let n = 0;
+  GPUAdapter.prototype.requestDevice = async function (...a) {
+    const d = await orig.apply(this, a), id = ++n;
+    log(`GPU接続#${id} 作成`);
+    const od = d.destroy.bind(d);
+    d.destroy = () => { log(`GPU接続#${id} 破棄`); return od(); };
+    d.addEventListener('uncapturederror', ev => log(`GPUエラー#${id}: ` + String(ev.error && ev.error.message).slice(0, 150)));
+    d.lost.then(i => { if (i && i.reason !== 'destroyed') log(`GPU接続#${id} 喪失: ` + (i.message || i.reason)); });
+    return d;
   };
 }
 
@@ -98,6 +122,7 @@ self.onmessage = async e => {
   try {
     if (m.cmd === 'probe') { self.postMessage(await probe(m)); return; }
     if (m.cmd !== 'generate') return;
+    if (m.debug) traceGpu();
     if (m.uploadMode) self.LGO_ORT_UPLOAD = m.uploadMode;
     loadOrt(m);
     const r = await LocalGenCore.generate(makeEnv(m), Object.assign({}, m.opts, {

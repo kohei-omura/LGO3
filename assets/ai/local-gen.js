@@ -166,8 +166,15 @@
   }
   function makeEnv(id) {
     const t = cfg.tiers[id];
+    const epOf = comp => {
+      const e0 = (cfg.epFor && cfg.epFor[comp]) || cfg.ep;     // 部品ごとに実行先を変えられる（例: 文章部品だけCPU）
+      // WebGPU: 使い終わったGPUバッファをすぐ返す（既定の使い回しは iPhone で強制終了の一因になった）
+      return e0 === 'webgpu' && cfg.epOptions ? Object.assign({ name: 'webgpu' }, cfg.epOptions) : e0;
+    };
+    const ka = cfg.ep === 'webgpu' && cfg.keepAlive !== false ? LocalGenCore.keepAlive(ort, epOf('unet')) : null;   // GPU 接続を保つ
     return {
       ort, dtype: t.dtype,
+      begin: ka && ka.begin, end: ka && ka.end,
       // 部品の読み出し。設計図（重みなし・assets/ai/graphs）＋ OPFS の元ファイルを外部データとして渡す。
       //   旧方式（モデル丸ごと）は onnxruntime が重みを wasm メモリへ複製し、iPhone の上限（約1.9GB）を
       //   超えてページが強制終了していた。外部データ方式なら重みは JS から GPU へ直接転送される。
@@ -188,10 +195,7 @@
         const ov = comp === 'text_encoder' ? { batch_size: d.batch, sequence_length: 77 }
                  : comp === 'unet'         ? { batch_size: d.batch, height: d.h, width: d.w, sequence_length: 77 }
                  :                           { batch_size: d.batch, latent_height: d.h, latent_width: d.w };
-        // WebGPU: 使い終わったGPUバッファをすぐ返す（既定の使い回しは iPhone で強制終了の原因になった。実機テストで確認）
-        const e0 = (cfg.epFor && cfg.epFor[comp]) || cfg.ep;     // 部品ごとに実行先を変えられる（例: 文章部品だけCPU）
-        const ep = e0 === 'webgpu' && cfg.epOptions ? Object.assign({ name: 'webgpu' }, cfg.epOptions) : e0;
-        return { executionProviders: [ep], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 };
+        return { executionProviders: [epOf(comp)], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 };
       },
     };
   }
@@ -234,6 +238,7 @@
       w.onmessage = e => {
         const d = e.data;
         if (d.type === 'progress') { if (o.onProgress) o.onProgress(d.ph, d.f); }
+        else if (d.type === 'log') { if (o.onLog) o.onLog(d.text); }
         else if (d.type === 'done') { fin(); resolve(d.r); }
         else if (d.type === 'error') { fin(); const er = new Error(d.message); er.name = d.name || 'Error'; reject(er); }
       };
@@ -241,7 +246,7 @@
       const abs = p => new URL(cfg.assetBase + p, location.href).href;
       w.postMessage({ cmd: 'generate', tier: id, root: ROOT_DIR, dtype: cfg.tiers[id].dtype,
         ortBase: abs('ort/'), mjsQuery: ORT_Q, coreUrl: abs('local-gen-core.js'), graphBase: abs(`graphs/${id}/`),
-        ep: cfg.ep, epOptions: cfg.epOptions, epFor: cfg.epFor, stream: cfg.stream, uploadMode: cfg.uploadMode,
+        ep: cfg.ep, epOptions: cfg.epOptions, epFor: cfg.epFor, stream: cfg.stream, uploadMode: cfg.uploadMode, keepAlive: cfg.keepAlive, debug: !!o.onLog,
         opts: { prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance, width: size.w, height: size.h } });
     });
   }

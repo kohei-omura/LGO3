@@ -227,7 +227,13 @@
     finally { try { await s.release(); } catch (e) {} s = null; }
   }
 
+  // env.begin / env.end があれば生成の前後に呼ぶ（GPU 接続を最後まで保つ「つなぎ」用。下記）
   async function generate(env, o) {
+    if (env.begin) await env.begin();
+    try { return await generateInner(env, o); }
+    finally { if (env.end) { try { await env.end(); } catch (e) {} } }
+  }
+  async function generateInner(env, o) {
     const W = o.width || 448, H = o.height || 640;
     if (W % 32 || H % 32) throw new Error('幅・高さは32の倍数にしてください');
     const steps = Math.max(2, o.steps || 18), g = o.guidance == null ? 7 : o.guidance;
@@ -295,7 +301,25 @@
              truncated: pos.truncated, tokensUsed: pos.used };
   }
 
-  const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, MAX_LEN };
+  // ── GPU 接続の「つなぎ」 ─────────────────────────────────
+  //   onnxruntime-web 1.31 は、最後のセッションを解放すると GPU 接続（GPUDevice）を破棄し、
+  //   次のセッションで作り直す（Chromium で確認）。iPhone の Safari では、文章部品→描画部品の
+  //   切り替えで作り直した直後の描画が毎回強制終了していた（実機テスト第4〜6回、例外なし）。
+  //   そこで生成の間は、極小のモデル（x+x）のセッションを1つ持ち続けて接続を保つ
+  const KEEPALIVE_ONNX = 'CAgSBGxnbzM6PQoOCgF4CgF4EgF5IgNBZGQSCWtlZXBhbGl2ZVoPCgF4EgoKCAgBEgQKAggEYg8KAXkSCgoICAESBAoCCARCBAoAEBE=';
+  function keepAlive(ortRef, ep) {
+    let sess = null;
+    return {
+      begin: async () => {
+        const bin = typeof atob === 'function' ? atob(KEEPALIVE_ONNX) : Buffer.from(KEEPALIVE_ONNX, 'base64').toString('binary');
+        const u8 = Uint8Array.from(bin, c => c.charCodeAt(0));
+        sess = await ortRef.InferenceSession.create(u8, { executionProviders: [ep] });
+      },
+      end: async () => { if (sess) { const s = sess; sess = null; await s.release(); } },
+    };
+  }
+
+  const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN };
   root.LocalGenCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

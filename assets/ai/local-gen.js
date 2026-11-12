@@ -154,7 +154,7 @@
       if (typeof LocalGenCore === 'undefined') await loadScript(cfg.assetBase + 'local-gen-core.js');
       if (typeof ort === 'undefined') await loadScript(cfg.assetBase + 'ort/ort.webgpu.min.js');
       { const b = new URL(cfg.assetBase + 'ort/', location.href).href;   // ?v= は実行部品を修正した時に古いキャッシュを使わせないため
-      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs?v=lgo1', wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
+      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs?v=lgo2', wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
       ort.env.wasm.numThreads = 1;             // SharedArrayBuffer が無い環境（GitHub Pages）でも動くように
       ort.env.logLevel = 'error';
       try { ort.env.webgpu.powerPreference = 'high-performance'; } catch (e) {}
@@ -186,7 +186,8 @@
                  : comp === 'unet'         ? { batch_size: d.batch, height: d.h, width: d.w, sequence_length: 77 }
                  :                           { batch_size: d.batch, latent_height: d.h, latent_width: d.w };
         // WebGPU: 使い終わったGPUバッファをすぐ返す（既定の使い回しは iPhone で強制終了の原因になった。実機テストで確認）
-        const ep = cfg.ep === 'webgpu' && cfg.epOptions ? Object.assign({ name: 'webgpu' }, cfg.epOptions) : cfg.ep;
+        const e0 = (cfg.epFor && cfg.epFor[comp]) || cfg.ep;     // 部品ごとに実行先を変えられる（例: 文章部品だけCPU）
+        const ep = e0 === 'webgpu' && cfg.epOptions ? Object.assign({ name: 'webgpu' }, cfg.epOptions) : e0;
         return { executionProviders: [ep], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 };
       },
     };
@@ -220,7 +221,7 @@
 
   // オフラインで初めて生成する時に備え、実行部品を先に取得しておく（Service Worker が保存する）
   async function warmup() {
-    const files = ['local-gen.js', 'local-gen-worker.js', 'local-gen-core.js', 'ort/ort.webgpu.min.js', 'ort/ort-wasm-simd-threaded.asyncify.mjs?v=lgo1',
+    const files = ['local-gen.js', 'local-gen-worker.js', 'local-gen-core.js', 'ort/ort.webgpu.min.js', 'ort/ort-wasm-simd-threaded.asyncify.mjs?v=lgo2',
                    ...['M', 'S'].flatMap(t => ['text_encoder', 'unet', 'vae_decoder'].map(c => `graphs/${t}/${c}.onnx`)),
                    'ort/ort-wasm-simd-threaded.asyncify.wasm', 'tf.min.js', 'tf-backend-webgpu.min.js', 'upscaler.min.js'];
     await Promise.all(files.map(f => fetch(cfg.assetBase + f).then(r => r.arrayBuffer()).catch(() => null)));

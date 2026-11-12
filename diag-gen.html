@@ -83,14 +83,19 @@ const STEPS = [
   { id: 'gpuC',    title: '5. GPU転送 C（onnxruntime と同じ方式）',      run: s => stepGpu(s, 'C'), risky: true },
   { id: 'ort',     title: '6. 本番と同じ読込（onnxruntime）',            run: stepOrt,    risky: true },
 ];
-// 第3回の実機結果: 使い回しOFFで 256×384 は片付けまで成功。続けて作り直すと落ちる。
-// → アプリに対策（使い回しOFF・一時バッファなしの転送）を入れた。ここではアプリ本体の生成処理を
-//   そのまま使い、毎回ページを開き直した状態で「文章解析→描画→仕上げ」を通しで試す
+// 第4回の実機結果: 対策後の通し生成は 256×384 でも「描画の1回目」直前で強制終了（第3回の単体は成功）。
+// 第3回からの違い = ①転送方式(writeBuffer) ②描画の前に文章部品を作って片付けた。どちらが原因かを切り分ける。
+// すべて 使い回しOFF(lazyRelease)・毎回ページを開き直してから実行
 const SZ = Q.get('sizes') ? Q.get('sizes').split(',').map(x => x.split('x').map(Number)) : [[256, 384], [320, 448], [384, 576]];
-STEPS.push(
-  ...SZ.map(([w, h], i) => ({ id: 'f' + i, title: `${7 + i}. 本番の生成 ${w}×${h}（2工程）`, run: s => stepGen(s, [[w, h]]), reloadBefore: true, w, h })),
-  { id: 'f9', title: `${7 + SZ.length}. 本番の生成 ${SZ[1][0]}×${SZ[1][1]} を2枚続けて`, run: s => stepGen(s, [SZ[1], SZ[1]]), reloadBefore: true },
-);
+const M = [
+  { id: 'm1', t: `描画部品だけ ${SZ[0].join('×')}・元の転送（第3回の成功と同じ条件）`, unet: true,  up: 'mapped', size: SZ[0] },
+  { id: 'm2', t: `描画部品だけ ${SZ[0].join('×')}・写しなし転送`,                     unet: true,  up: 'write',  size: SZ[0] },
+  { id: 'm3', t: `通しの生成 ${SZ[0].join('×')}・元の転送`,                            unet: false, up: 'mapped', size: SZ[0] },
+  { id: 'm4', t: `通しの生成 ${SZ[0].join('×')}・元の転送・文章部品はCPU`,             unet: false, up: 'mapped', size: SZ[0], teCpu: true },
+  { id: 'm5', t: `描画部品だけ ${SZ[1].join('×')}・元の転送`,                          unet: true,  up: 'mapped', size: SZ[1] },
+  { id: 'm6', t: `描画部品だけ ${SZ[2].join('×')}・元の転送`,                          unet: true,  up: 'mapped', size: SZ[2] },
+];
+M.forEach((m, i) => STEPS.push({ id: m.id, title: `${7 + i}. ${m.t}`, run: s => stepMatrix(s, m), reloadBefore: true, m }));
 let state = load() || { v: 1, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
@@ -234,7 +239,7 @@ async function prepOrt(s) {
   if (!window.ort) await loadScript('assets/ai/ort/ort.webgpu.min.js');
   if (!window.LocalGenCore) await loadScript('assets/ai/local-gen-core.js');
   { const b = new URL('assets/ai/ort/', location.href).href;   // ?v= は実行部品を修正した時に古いキャッシュを使わせないため
-      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs?v=lgo1', wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
+      ort.env.wasm.wasmPaths = { mjs: b + 'ort-wasm-simd-threaded.asyncify.mjs?v=lgo2', wasm: b + 'ort-wasm-simd-threaded.asyncify.wasm' }; }
   ort.env.wasm.numThreads = 1; ort.env.logLevel = 'error';
 }
 async function createUnet(s, lh, lw, epOpts) {
@@ -273,33 +278,50 @@ async function stepOrt(s) {
   await sess.release(); sess = null;
   s.ok = bad === 0; s.summary = bad ? `出力に異常値 ${bad}個` : 'OK（作成・実行とも成功）';
 }
-// 7〜. アプリ本体（LOCAL_GEN）で通しの生成。段階が変わるたびに記録
+// 7〜12. 条件を変えて1工程ぶん（2回実行）を試す
+const LAZY = { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' };
 const PH = { 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章部品の作成完了', text: '文章の解析',
   'unet:load': '描画部品の読込', 'unet:run': '描画部品の作成完了→描画開始', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ部品の作成完了', vae: '仕上げ' };
-async function stepGen(s, sizes) {
-  if (!window.LOCAL_GEN) await loadScript('assets/ai/local-gen.js');
-  if (Q.get('ep')) LOCAL_GEN._configure({ ep: Q.get('ep') });
-  await LOCAL_GEN.status();
-  const per = [];
-  for (let n = 0; n < sizes.length; n++) {
-    const [w, h] = sizes[n], tag = sizes.length > 1 ? `${n + 1}枚目 ` : '';
-    let last = '';
-    mark(s, `${tag}${w}×${h} 生成開始`); await sleep(100);
-    const t0 = performance.now();
-    const r = await LOCAL_GEN.generate({ prompt: 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', negative: 'lowres, bad anatomy',
-      seed: 1234, tier: state.tier, size: { w, h }, steps: 2,
-      onProgress: (ph, f) => {
-        const k = ph + Math.round(f * 100); if (k === last) return; last = k;
-        mark(s, tag + (ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : '')));
-      } });
-    if (r.width !== w) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);
-    per.push(r.msPerStep);
-    mark(s, `${tag}完了（全体 ${((performance.now() - t0) / 1000).toFixed(1)}秒・1工程 ${(r.msPerStep / 1000).toFixed(1)}秒）`);
-    await sleep(2000);
-    mark(s, `${tag}完了後 2秒 生存`);
+async function stepMatrix(s, m) {
+  globalThis.LGO_ORT_UPLOAD = m.up;
+  const [w, h] = m.size;
+  if (m.unet) {
+    await prepOrt(s);
+    let sess = await createUnet(s, h / 8, w / 8, LAZY);
+    await sleep(300);
+    const ms = [];
+    for (let k = 1; k <= 2; k++) {
+      mark(s, `${k}回目の実行中…`); await sleep(100);
+      const t = performance.now();
+      const bad = await runUnet(sess, h / 8, w / 8);
+      ms.push(performance.now() - t);
+      if (bad) throw new Error('出力に異常値 ' + bad + '個');
+      mark(s, `${k}回目 完了（${(ms[k - 1] / 1000).toFixed(1)}秒）`); await sleep(300);
+    }
+    mark(s, '片付け開始'); await sleep(100);
+    await sess.release(); sess = null;
+    mark(s, '片付け完了 → 待機（2秒）'); await sleep(2000);
+    mark(s, '片付け後も生存');
+    s.ok = true; s.summary = `OK（1工程 約${((ms[0] + ms[1]) / 1000).toFixed(1)}秒）`;
+    return;
   }
-  s.ok = true; s.msPerStep = per[per.length - 1];
-  s.summary = `OK（1工程 ${(s.msPerStep / 1000).toFixed(1)}秒）`;
+  if (!window.LOCAL_GEN) await loadScript('assets/ai/local-gen.js');
+  LOCAL_GEN._configure(Object.assign({ epOptions: LAZY, epFor: m.teCpu ? { text_encoder: 'wasm' } : {} }, Q.get('ep') ? { ep: Q.get('ep') } : {}));
+  await LOCAL_GEN.status();
+  let last = '';
+  mark(s, `${w}×${h} 生成開始`); await sleep(100);
+  const t0 = performance.now();
+  const r = await LOCAL_GEN.generate({ prompt: 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', negative: 'lowres, bad anatomy',
+    seed: 1234, tier: state.tier, size: { w, h }, steps: 1,
+    onProgress: (ph, f) => {
+      const k = ph + Math.round(f * 100); if (k === last) return; last = k;
+      mark(s, ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : ''));
+    } });
+  if (r.width !== w) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);
+  mark(s, `完了（全体 ${((performance.now() - t0) / 1000).toFixed(1)}秒）`);
+  await sleep(2000);
+  mark(s, '完了後 2秒 生存');
+  s.ok = true; s.summary = `OK（1工程 ${(r.msPerStep / 1000).toFixed(1)}秒）`;
 }
 
 // ════════════════ 判定 ════════════════
@@ -312,12 +334,20 @@ function verdict() {
   if (bad('gpuA')) return '区切って送っても落ちる → GPUへ送った量そのものが上限超え（より小さいモデルが必要）';
   if (bad('gpuB') || bad('gpuC')) return '連続で送ると落ちる → 区切って送れば回避できる見込み（部品を分割して読み込む修正で対応可）';
   if (bad('ort')) return '転送は問題なし → onnxruntime 内部（最適化処理など）で落ちている';
-  const at = id => st[id] && st[id].status === 'crashed' ? `💥（${st[id].mark || '?'}）` : st[id] && st[id].status === 'error' ? `⚠（${st[id].error}）` : '○';
-  const gs = STEPS.filter(d => /^f/.test(d.id));
-  const lines = gs.map(d => `${d.title.replace(/^\d+\. 本番の生成 /, '')}: ${at(d.id)}`);
-  const okSizes = gs.filter(d => d.w && st[d.id] && st[d.id].status === 'done');
-  const msg = okSizes.length ? `→ ${okSizes[okSizes.length - 1].w}×${okSizes[okSizes.length - 1].h} まで生成できます` : '→ 対策後も通しの生成に失敗';
-  return lines.join('\n') + '\n' + msg;
+  const at = id => !st[id] ? '未実施' : st[id].status === 'crashed' ? `💥（${st[id].mark || '?'}）` : st[id].status === 'error' ? `⚠（${st[id].error}）` : '○';
+  const lines = M.map(m => `${m.id}. ${m.t}: ${at(m.id)}`);
+  const ok = id => st[id] && st[id].status === 'done';
+  const ng = id => st[id] && st[id].status === 'crashed';            // 強制終了（エラーで止まったものは含めない）
+  const msg = [];
+  if (ok('m1') && ng('m2')) msg.push('写しなし転送が逆効果 → 元の転送に戻す（済）');
+  if (ok('m1') && ng('m3') && ok('m4')) msg.push('文章部品のGPU使用が原因 → 文章部品をCPUで動かせば解決');
+  if (ok('m1') && ng('m3') && ng('m4')) msg.push('通しの生成では、描画の前の処理が残したメモリが原因');
+  if (ok('m3') && ng('m2')) msg.push('通しの生成も成功 → 前回の失敗は写しなし転送が原因');
+  if (ok('m3') && ok('m2')) msg.push('今回は全条件で成功 → 前回の失敗は端末の状態（空きメモリ）に左右された可能性');
+  if (ng('m1')) msg.push('第3回の成功条件でも失敗 → 端末の状態（他アプリ・空きメモリ）に左右されている可能性');
+  const big = [['m6', SZ[2]], ['m5', SZ[1]], ['m1', SZ[0]]].find(([id]) => ok(id));
+  msg.push(big ? `描画部品だけなら ${big[1].join('×')} まで動作` : `描画部品だけでも ${SZ[0].join('×')} で失敗`);
+  return lines.join('\n') + '\n→ ' + msg.join('\n→ ');
 }
 
 // ════════════════ 表示 ════════════════

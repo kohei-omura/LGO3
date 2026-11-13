@@ -14,7 +14,7 @@
      ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name } / { type:'log', text }（debug 時）
    ════════════════════════════════════════════════════════════ */
 'use strict';
-const WORKER_VERSION = '2026-11-14a';
+const WORKER_VERSION = '2026-11-14b';
 
 async function probe(m) {
   const out = { type: 'probe', gpu: !!(self.navigator && navigator.gpu), adapter: false, f16: false,
@@ -36,7 +36,9 @@ async function probe(m) {
 //   ・1回に送る命令の数を減らす（maxNumPendingDispatches。最初のセッションの値が全体に効く）
 //   ・GPU で実行中の送信を、最近の実行時間から見積もって合計 budget 秒以内に抑え、残りは手元で待たせる
 //   送信の順序を保つため、待っている間の writeBuffer / バッファ破棄 / 読み出し(mapAsync) も同じ列に並べる
-const PACE = { on: false, budget: 0.8, min: 2, max: 16, inflight: 0, fifo: [], waiters: [], svc: [], lastDone: 0,
+//   待たせるのは計算の実行中（session.run）だけ。部品の読み込み中に待たせると、重みの転送用の
+//   一時バッファが破棄されずにたまり、メモリを大きく使う（第10回で読み込み直後に落ちた）
+const PACE = { on: false, active: 0, budget: 0.8, min: 2, max: 16, inflight: 0, fifo: [], waiters: [], svc: [], lastDone: 0,
                n: 0, maxWait: 0, maxSvc: 0, reported: 0, log: null };
 function paceStats(reset) {
   const r = { 送信: PACE.n, 待ち最大: +PACE.maxWait.toFixed(2), 実行最大: +PACE.maxSvc.toFixed(2) };
@@ -95,7 +97,7 @@ function installPace(cfg, log) {
     return new Uint8Array(data, o, size != null ? size : data.byteLength - o).slice();
   };
   Q.submit = function (cbs) {
-    if (!PACE.fifo.length && PACE.inflight < limit()) return realSubmit(this, cbs);
+    if (!PACE.fifo.length && (!PACE.active || PACE.inflight < limit())) return realSubmit(this, cbs);
     PACE.fifo.push({ k: 's', q: this, cbs: Array.from(cbs) });
   };
   Q.writeBuffer = function (b, off, data, dOff, size) {
@@ -129,6 +131,10 @@ function loadOrt(m) {
   ort.env.wasm.numThreads = 1;
   ort.env.logLevel = 'error';
   try { ort.env.webgpu.powerPreference = 'high-performance'; } catch (e) {}
+  if (PACE.on && ort.InferenceSession && ort.InferenceSession.prototype.run) {   // 実行中だけ送信を待ち合わせる
+    const P = ort.InferenceSession.prototype, oRun = P.run;
+    P.run = async function (...a) { PACE.active++; try { return await oRun.apply(this, a); } finally { PACE.active--; } };
+  }
   _ort = true;
 }
 

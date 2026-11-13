@@ -1,7 +1,7 @@
 // 運気の女神 Lucky Girl Oracle ── Service Worker
 // アプリシェル(HTML/アイコン)をキャッシュしてオフライン起動＆高速再表示。
 // 画像生成API(Pollinations/Horde)など外部オリジンはSWを介さずネットワークへ通す。
-const CACHE = 'lg-oracle-v13';
+const CACHE = 'lg-oracle-v14';
 const FONT_CACHE = 'lg-fonts-v1';   // Google Fonts（更新頻度が低いので別枠で長期保持）
 
 // アプリシェル: 起動に必須のものだけ。スプラッシュ(assets/splash)は
@@ -13,10 +13,10 @@ const ASSETS = [
   './assets/icons/icon-512-maskable.png',
   './assets/icons/apple-touch-icon.png',
   // 端末内生成の部品（オフライン時にも必要）。?v= は assets/ai/local-gen.js の AV とそろえる
-  './assets/ai/local-gen.js?v=2026-11-14a',
-  './assets/ai/local-gen-worker.js?v=2026-11-14a',
-  './assets/ai/local-gen-run-worker.js?v=2026-11-14a',
-  './assets/ai/local-gen-core.js?v=2026-11-14a',
+  './assets/ai/local-gen.js?v=2026-11-14b',
+  './assets/ai/local-gen-worker.js?v=2026-11-14b',
+  './assets/ai/local-gen-run-worker.js?v=2026-11-14b',
+  './assets/ai/local-gen-core.js?v=2026-11-14b',
 ];
 
 self.addEventListener('install', e => {

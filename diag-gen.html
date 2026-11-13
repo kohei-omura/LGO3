@@ -58,7 +58,7 @@
 <script>
 'use strict';
 /* ════════════════════════════════════════════════════════════
-   端末内生成テスト（第10回）: 送信の待ち合わせ版を試す
+   端末内生成テスト（第11回）: 送信の待ち合わせ版を試す
    - アプリが保存したモデル（OPFS: lgo-localgen/<tier>/）を使う。通信なし
    - 手順ごと・手順内の段階ごとに localStorage へ記録 → 落ちても開き直せば
      「どの手順の、どの段階で落ちたか」が残り、次の手順から再開する
@@ -74,15 +74,17 @@
      3秒以内に終わらないと GPU プロセスを落とす。448×640 は描画18工程を完走し、仕上げ（VAE）で落ちた
    - 第10回: 1回に送る命令を2個にし、GPU に預ける量を実行時間の見積もりで抑える（local-gen-run-worker.js の installPace）。
      各段階で「GPU待ち 最大◯秒」を記録する（3秒に近いほど危ない）
-   - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128
+   - 第10回: 待ち合わせ版は「GPU待ち」最大0.79秒（3秒より十分短い）なのに、描画開始直後や2回目の実行中に落ちた。
+     読み込み中にも送信を待たせて転送用の一時バッファがたまっていたため、第11回は実行中（session.run）だけ待たせる
+   - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128&pace=0（pace=0 で待ち合わせなし）
    ════════════════════════════════════════════════════════════ */
-const KEY = 'lgo_diag_gen_v3';
+const KEY = 'lgo_diag_gen_v4';
 const MB = 1048576;
 const Q = new URLSearchParams(location.search);
 const EP = Q.get('ep') || 'webgpu';
 const ROOT_DIR = 'lgo-localgen';
 const COMP = 'unet';
-const AV = '2026-11-14a';
+const AV = '2026-11-14b';
 const PROMPT = 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', NEG = 'lowres, bad anatomy';
 const TEST_SZ = Q.get('sizes') ? Q.get('sizes').split(',')[0].split('x').map(Number) : null;   // 動作確認用に全部この大きさで
 const SZ = sz => TEST_SZ || sz;
@@ -95,7 +97,7 @@ const STEPS = [
   { id: 'g1',  title: `4. 本番どおりの生成（軽量 ${SZ([256, 384]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([256, 384])), reloadBefore: true },
   { id: 'g2',  title: `5. 本番どおりの生成（軽量 ${SZ([448, 640]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([448, 640])), reloadBefore: true },
 ];
-let state = load() || { v: 3, inProgress: false, steps: {} };
+let state = load() || { v: 4, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -165,6 +167,7 @@ function loadScript(src) {
 async function useLocalGen() {
   if (!window.LOCAL_GEN) await loadScript('assets/ai/local-gen.js?v=' + AV);
   if (Q.get('ep')) LOCAL_GEN._configure({ ep: Q.get('ep') });
+  if (Q.get('pace') === '0') LOCAL_GEN._configure({ pace: null });
   await LOCAL_GEN.status();
 }
 // 2. 版と Worker の確認
@@ -236,7 +239,7 @@ function verdict() {
   else if (ok('g1')) msg.push('256×384 は成功、448×640 は失敗 → 送信の待ち合わせをさらに細かくするか、この端末は 256×384（拡大して仕上げ）にします');
   else if (ok('y1')) msg.push('描画部品だけなら動くが、通しの生成で落ちる → 記録の「GPU待ち」の値を見て調整します');
   else msg.push('対策後も落ちる → 強制終了の記録（com.apple.WebKit.GPU）の中身で、別の原因か確かめます');
-  if (ng('g1') || ng('g2') || ng('y1')) msg.push('強制終了の記録（設定 → プライバシーとセキュリティ → 解析と改善 → 解析データ の com.apple.WebKit.GPU-日付）も送ってください');
+  if (ng('g1') || ng('g2') || ng('y1')) msg.push('解析データ（設定 → プライバシーとセキュリティ → 解析と改善 → 解析データ）で、テストした時刻の記録（com.apple.WebKit.GPU / WebContent / JetsamEvent）を送ってください');
   return lines.join('\n') + (msg.length ? '\n→ ' + msg.join('\n→ ') : '');
 }
 

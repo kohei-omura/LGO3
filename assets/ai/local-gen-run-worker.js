@@ -6,14 +6,15 @@
        （onnxruntime の外部データ読み出しを readSlice に対応させてある: ort-wasm-*.mjs の LGO3 パッチ）
      ・1枚生成するごとに Worker ごと捨てるので、GPU も含めメモリが確実に返る
      ・生成の間は GPU 接続を保つ（LocalGenCore.keepAlive。部品の切り替えで作り直すと iPhone で落ちる）
+     ・Safari は GPU への命令が送信後3秒で終わらないと強制終了するので、送信を待ち合わせる（installPace）
    メッセージ:
      → { cmd:'probe', ep }
      ← { type:'probe', gpu, adapter, f16, sync }
-     → { cmd:'generate', tier, root, dtype, ortBase, mjsQuery, graphBase, ep, epOptions, epFor, stream, keepAlive, opts }
+     → { cmd:'generate', tier, root, dtype, ortBase, mjsQuery, graphBase, ep, epOptions, epFor, stream, keepAlive, pace, opts }
      ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name } / { type:'log', text }（debug 時）
    ════════════════════════════════════════════════════════════ */
 'use strict';
-const WORKER_VERSION = '2026-11-13d';
+const WORKER_VERSION = '2026-11-14a';
 
 async function probe(m) {
   const out = { type: 'probe', gpu: !!(self.navigator && navigator.gpu), adapter: false, f16: false,
@@ -26,6 +27,97 @@ async function probe(m) {
     } catch (e) { out.error = String(e && e.message || e); }
   }
   return out;
+}
+
+// ── GPU への送信の待ち合わせ（iPhone の強制終了対策・実機テスト第9回で原因を特定） ──
+//   Safari(WebKit) は、GPU へ送った命令のまとまり（command buffer）が「送ってから3秒以内」に
+//   終わらないと、GPU プロセスごと強制終了する（WebKit Queue.mm: "did not complete within 3s timeout"）。
+//   onnxruntime は命令を一気に送るので、大きい画像では後ろの方が前の計算待ちで3秒を超えていた。
+//   ・1回に送る命令の数を減らす（maxNumPendingDispatches。最初のセッションの値が全体に効く）
+//   ・GPU で実行中の送信を、最近の実行時間から見積もって合計 budget 秒以内に抑え、残りは手元で待たせる
+//   送信の順序を保つため、待っている間の writeBuffer / バッファ破棄 / 読み出し(mapAsync) も同じ列に並べる
+const PACE = { on: false, budget: 0.8, min: 2, max: 16, inflight: 0, fifo: [], waiters: [], svc: [], lastDone: 0,
+               n: 0, maxWait: 0, maxSvc: 0, reported: 0, log: null };
+function paceStats(reset) {
+  const r = { 送信: PACE.n, 待ち最大: +PACE.maxWait.toFixed(2), 実行最大: +PACE.maxSvc.toFixed(2) };
+  if (reset) { PACE.n = 0; PACE.maxWait = 0; PACE.maxSvc = 0; PACE.reported = 0; }
+  return r;
+}
+function installPace(cfg, log) {
+  if (PACE.on || !self.GPUQueue || !self.GPUBuffer) return;
+  PACE.on = true; PACE.log = log || null;
+  if (cfg) for (const k of ['budget', 'min', 'max']) if (cfg[k] != null) PACE[k] = cfg[k];
+  const Q = GPUQueue.prototype, B = GPUBuffer.prototype, D = GPUDevice.prototype;
+  const oSubmit = Q.submit, oWrite = Q.writeBuffer, oWriteTex = Q.writeTexture, oDone = Q.onSubmittedWorkDone,
+        oMap = B.mapAsync, oDestroy = B.destroy, oDevDestroy = D.destroy;
+  const now = () => performance.now() / 1000;
+  const limit = () => {   // 最近16回の実行時間の最大から、同時に GPU に預ける数を決める
+    const m = PACE.svc.length ? Math.max(...PACE.svc) : 0.25;
+    return Math.max(PACE.min, Math.min(PACE.max, Math.floor(PACE.budget / Math.max(m, 0.005))));
+  };
+  const realSubmit = (q, cbs) => {
+    const t = now();
+    PACE.inflight++; PACE.n++;
+    oSubmit.call(q, cbs);
+    oDone.call(q).then(() => {
+      const d = now(), svc = d - Math.max(t, PACE.lastDone), wait = d - t;
+      PACE.lastDone = d; PACE.inflight--;
+      PACE.svc.push(svc); if (PACE.svc.length > 16) PACE.svc.shift();
+      if (svc > PACE.maxSvc) PACE.maxSvc = svc;
+      if (wait > PACE.maxWait) {
+        PACE.maxWait = wait;
+        if (PACE.log && wait >= 0.5 && wait >= PACE.reported + 0.25) { PACE.reported = wait; PACE.log(`GPU待ち 最大 ${wait.toFixed(2)}秒（1回の実行 最大 ${PACE.maxSvc.toFixed(2)}秒）`); }
+      }
+      pump();
+    }, () => { PACE.inflight--; pump(); });
+  };
+  const pump = () => {
+    while (PACE.fifo.length) {
+      const e = PACE.fifo[0];
+      if (e.k === 's' && PACE.inflight >= limit()) break;
+      PACE.fifo.shift();
+      try {
+        if (e.k === 's') realSubmit(e.q, e.cbs);
+        else if (e.k === 'w') oWrite.call(e.q, e.b, e.off, e.data);
+        else if (e.k === 't') oWriteTex.call(e.q, e.dst, e.data, e.layout, e.size);
+        else if (e.k === 'd') oDestroy.call(e.b);
+      } catch (err) { if (PACE.log) PACE.log('送信の再開でエラー: ' + String(err && err.message || err).slice(0, 120)); }
+    }
+    if (!PACE.fifo.length) for (const w of PACE.waiters.splice(0)) w();
+  };
+  const drained = () => PACE.fifo.length ? new Promise(r => PACE.waiters.push(r)) : Promise.resolve();
+  const bytesOf = (data, off, size) => {   // 後で送るため、その時点の中身を写しておく（wasm のメモリは書き換わる）
+    if (ArrayBuffer.isView(data)) {
+      const bpe = data.BYTES_PER_ELEMENT || 1, o = (off || 0) * bpe;
+      return new Uint8Array(data.buffer, data.byteOffset + o, size != null ? size * bpe : data.byteLength - o).slice();
+    }
+    const o = off || 0;
+    return new Uint8Array(data, o, size != null ? size : data.byteLength - o).slice();
+  };
+  Q.submit = function (cbs) {
+    if (!PACE.fifo.length && PACE.inflight < limit()) return realSubmit(this, cbs);
+    PACE.fifo.push({ k: 's', q: this, cbs: Array.from(cbs) });
+  };
+  Q.writeBuffer = function (b, off, data, dOff, size) {
+    if (!PACE.fifo.length) return oWrite.call(this, b, off, data, dOff, size);
+    PACE.fifo.push({ k: 'w', q: this, b, off, data: bytesOf(data, dOff, size) });
+  };
+  Q.writeTexture = function (dst, data, layout, size) {
+    if (!PACE.fifo.length) return oWriteTex.call(this, dst, data, layout, size);
+    PACE.fifo.push({ k: 't', q: this, dst, data: bytesOf(data), layout, size });
+  };
+  Q.onSubmittedWorkDone = function () { return drained().then(() => oDone.call(this)); };
+  B.mapAsync = function (...a) { return drained().then(() => oMap.apply(this, a)); };
+  B.destroy = function () {
+    if (!PACE.fifo.length) return oDestroy.call(this);
+    PACE.fifo.push({ k: 'd', b: this });
+  };
+  D.destroy = function () {   // 接続を捨てる時は、その接続宛てに待たせていた送信も捨てる
+    const q = this.queue;
+    PACE.fifo = PACE.fifo.filter(e => e.q !== q && e.k !== 'd');
+    if (!PACE.fifo.length) for (const w of PACE.waiters.splice(0)) w();
+    return oDevDestroy.call(this);
+  };
 }
 
 let _ort = false;
@@ -68,7 +160,10 @@ function makeEnv(m) {
     return e0 === 'webgpu' && m.epOptions ? Object.assign({ name: 'webgpu' }, m.epOptions) : e0;
   };
   // GPU 接続を生成の間ずっと保つ（部品の切り替えで作り直させない）
-  const ka = m.ep === 'webgpu' && m.keepAlive !== false ? LocalGenCore.keepAlive(ort, epOf('unet')) : null;
+  // 1回に送る命令の数（GPU 接続ごとに最初のセッションの値が効くので、全セッションに同じ値を付ける）
+  const extraOpts = m.ep === 'webgpu' && m.pace && m.pace.pending
+    ? { extra: { 'ep.webgpuexecutionprovider.maxNumPendingDispatches': String(m.pace.pending) } } : {};
+  const ka = m.ep === 'webgpu' && m.keepAlive !== false ? LocalGenCore.keepAlive(ort, epOf('unet'), extraOpts) : null;
   return {
     ort, dtype: m.dtype,
     begin: ka && ka.begin, end: ka && ka.end,
@@ -96,7 +191,7 @@ function makeEnv(m) {
       const ov = comp === 'text_encoder' ? { batch_size: d.batch, sequence_length: 77 }
                : comp === 'unet'         ? { batch_size: d.batch, height: d.h, width: d.w, sequence_length: 77 }
                :                           { batch_size: d.batch, latent_height: d.h, latent_width: d.w };
-      return { executionProviders: [epOf(comp)], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 };
+      return Object.assign({ executionProviders: [epOf(comp)], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 }, extraOpts);
     },
   };
 }
@@ -166,6 +261,7 @@ async function diag(m) {
           const o = C.toF32((await s.run({ sample: C._fromF32(ort, dt, sample, [1, 4, lh, lw]), timestep: ts, encoder_hidden_states: ctx[r % 2] })).out_sample.data);
           out[`描画${r + 1}回目の出力`] = statsOf(o);
           log(`${r + 1}回目 完了 ` + JSON.stringify(out[`描画${r + 1}回目の出力`]));
+          if (PACE.on) { out[`描画${r + 1}回目の送信`] = paceStats(true); log(`${r + 1}回目の送信 ` + JSON.stringify(out[`描画${r + 1}回目の送信`])); }
         }
       }, prog);
     }
@@ -178,6 +274,7 @@ self.onmessage = async e => {
   try {
     if (m.cmd === 'probe') { self.postMessage(await probe(m)); return; }
     if (m.debug) traceGpu();
+    if (m.ep === 'webgpu' && m.pace) installPace(m.pace, m.debug ? text => self.postMessage({ type: 'log', text }) : null);
     if (m.cmd === 'diag') {
       if (m.uploadMode) self.LGO_ORT_UPLOAD = m.uploadMode;
       loadOrt(m);
@@ -194,6 +291,7 @@ self.onmessage = async e => {
     const r = await LocalGenCore.generate(makeEnv(m), Object.assign({}, m.opts, {
       onProgress: (ph, f) => self.postMessage({ type: 'progress', ph, f }),
     }));
+    if (m.debug && PACE.on) self.postMessage({ type: 'log', text: 'GPUへの送信 ' + JSON.stringify(paceStats(false)) });
     self.postMessage({ type: 'done', r }, [r.rgba.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', message: String(err && err.message || err), name: err && err.name });

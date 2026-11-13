@@ -307,19 +307,19 @@
   //   切り替えで作り直した直後の描画が毎回強制終了していた（実機テスト第4〜6回、例外なし）。
   //   そこで生成の間は、極小のモデル（x+x）のセッションを1つ持ち続けて接続を保つ
   const KEEPALIVE_ONNX = 'CAgSBGxnbzM6PQoOCgF4CgF4EgF5IgNBZGQSCWtlZXBhbGl2ZVoPCgF4EgoKCAgBEgQKAggEYg8KAXkSCgoICAESBAoCCARCBAoAEBE=';
-  function keepAlive(ortRef, ep) {
+  function keepAlive(ortRef, ep, extraOpts) {
     let sess = null;
     return {
       begin: async () => {
         const bin = typeof atob === 'function' ? atob(KEEPALIVE_ONNX) : Buffer.from(KEEPALIVE_ONNX, 'base64').toString('binary');
         const u8 = Uint8Array.from(bin, c => c.charCodeAt(0));
-        sess = await ortRef.InferenceSession.create(u8, { executionProviders: [ep] });
+        sess = await ortRef.InferenceSession.create(u8, Object.assign({ executionProviders: [ep] }, extraOpts));
       },
       end: async () => { if (sess) { const s = sess; sess = null; await s.release(); } },
     };
   }
 
-  const VERSION = '2026-11-13d';
+  const VERSION = '2026-11-14a';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
                 _withSession: withSession, _fromF32: fromF32 };   // _ 付きは診断用
   root.LocalGenCore = api;

@@ -52,7 +52,7 @@ iPhone（Safari のページ上限 約1.9GB）で強制終了していました�
 - ブラウザ（onnxruntime-web）と Node（onnxruntime-node）の出力 … 平均差 1/255
 
 ### iPhone の強制終了への対策（実機テスト第1〜8回の結論）
-iPhone の Safari は「JS のメモリ＋GPU のメモリ」の合計に約1.9GBの上限があると推定。描画の作業メモリは
+当時は iPhone の Safari に「JS のメモリ＋GPU のメモリ」の合計約1.9GBの上限があると推定していた（第9回で、主な原因は下記の3秒ルールと判明）。描画の作業メモリは
 256×384 で約80MB・448×640 でも約625MB（グラフから計算）と小さく、問題は「モデルファイル（444〜647MB）を
 丸ごとメモリへ読んだ写しが、GPU へ送った後も残ること」だった。
 
@@ -86,6 +86,21 @@ iPhone の Safari は「JS のメモリ＋GPU のメモリ」の合計に約1.9G
   「1回に結び付けられるバッファの上限」（Dawn は128MB。iPhone は1GB）を超えるため。Android 等でも起こりうる
 - 1工程の GPU 命令数は 757 → 1303 に増える（lavapipe では所要時間ほぼ同じ）
 - 分割数は `ATTN_CHUNKS` / `FF_CHUNKS`。分割位置は `Shape` から計算し、大きさが決まると onnxruntime が定数に畳み込む
+
+### 強制終了の本当の原因: Safari の「3秒ルール」（実機テスト第9回の結論）
+第9回で、GPU メモリは計算なしなら 1.5GB まで確保できた（メモリ量は原因ではない）。強制終了の記録
+（解析データの `com.apple.WebKit.GPU-日付.ips`）は、`WebGPU::crashGPUProcess` ← `Queue::commitMTLCommandBuffer`
+のタイマーだった。WebKit（`Source/WebGPU/WebGPU/Queue.mm`）は、GPU へ送った命令のまとまり（command buffer）が
+**送ってから3秒以内に終わらないと GPU プロセスごと落とす**。onnxruntime は命令を一気に送るため、
+大きい画像では後ろの命令が前の計算待ちで3秒を超えていた（448×640 は描画18工程を完走し、仕上げで落ちた）。
+
+| 対策（`local-gen-run-worker.js` の `installPace`、`local-gen.js` の `pace`） | 内容 |
+| --- | --- |
+| 1回に送る命令を2個に | セッション設定 `ep.webgpuexecutionprovider.maxNumPendingDispatches`（既定16）。GPU 接続ごとに最初のセッションの値が効くので、つなぎ用セッションにも付ける |
+| GPU に預ける量を抑える | 最近16回の実行時間の最大から、同時に預ける送信の数（2〜16）を決め、見積もり合計0.8秒以内にする。残りは手元の列で待たせ、終わった分だけ送る |
+| 順序を保つ | 列が空でない間は `writeBuffer`（中身を写して）・バッファ破棄・`mapAsync`・`onSubmittedWorkDone` も同じ列に並べる |
+
+Dawn＋lavapipe（軽量・128×128）で、送信の「待ち」の最大は 9.06秒 → 0.80秒、出力は完全一致、所要時間はほぼ同じ。
 
 #### 半精度 WebGPU の再現環境（開発用）
 Chromium 同梱の SwiftShader は半精度(f16)に非対応のため、Node.js ＋ Dawn（npm `webgpu`）＋ Mesa lavapipe

@@ -39,7 +39,7 @@
 <body>
 <div class="wrap">
   <h1>🔬 端末内生成テスト</h1>
-  <p class="lead">大きい画像（256×384 以上）で端末内生成が落ちる原因を確かめ、改良版（計算の小分け）を試します。所要時間は5〜8分です。<br>
+  <p class="lead">強制終了の原因（GPUへの命令が3秒で終わらないと Safari が止める仕組み）への対策版を試します。所要時間は5〜8分です。<br>
     使うモデル: <b id="tierName">確認中…</b></p>
   <div class="warn">⚠ 途中で画面が真っ白になったり、勝手に再読み込みされることがあります（それが調べたい現象です）。<br>
     「問題が繰り返し起きました」と出ても、<b>このページを開き直せば続きから自動で再開</b>します。全部の手順が終わるまで、開き直しを繰り返してください。<br>
@@ -58,7 +58,7 @@
 <script>
 'use strict';
 /* ════════════════════════════════════════════════════════════
-   端末内生成テスト（第9回）: 大きい画像で落ちる原因を確かめる
+   端末内生成テスト（第10回）: 送信の待ち合わせ版を試す
    - アプリが保存したモデル（OPFS: lgo-localgen/<tier>/）を使う。通信なし
    - 手順ごと・手順内の段階ごとに localStorage へ記録 → 落ちても開き直せば
      「どの手順の、どの段階で落ちたか」が残り、次の手順から再開する
@@ -69,31 +69,33 @@
               ・自己注意（画素どうしの関係の表）: 448×640 で 1個 306MB → 10MB 以下
               ・全結合（1画素ずつの拡大→縮小）: 1個 22MB → 6MB 以下
               Dawn で出力は元と完全一致。256×384 の GPU メモリ最大 596MB → 502MB（192×256 の元の版と同じ水準）
-   - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128&cap=256
+   - 第9回の結論: GPU メモリは 1.5GB まで確保できた（量は原因でない）。強制終了の記録（com.apple.WebKit.GPU）は
+     WebGPU::crashGPUProcess ← Queue::commitMTLCommandBuffer の3秒タイマー。WebKit は送った命令のまとまりが
+     3秒以内に終わらないと GPU プロセスを落とす。448×640 は描画18工程を完走し、仕上げ（VAE）で落ちた
+   - 第10回: 1回に送る命令を2個にし、GPU に預ける量を実行時間の見積もりで抑える（local-gen-run-worker.js の installPace）。
+     各段階で「GPU待ち 最大◯秒」を記録する（3秒に近いほど危ない）
+   - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128
    ════════════════════════════════════════════════════════════ */
-const KEY = 'lgo_diag_gen_v2';
+const KEY = 'lgo_diag_gen_v3';
 const MB = 1048576;
 const Q = new URLSearchParams(location.search);
 const EP = Q.get('ep') || 'webgpu';
 const ROOT_DIR = 'lgo-localgen';
 const COMP = 'unet';
-const AV = '2026-11-13d';
+const AV = '2026-11-14a';
 const PROMPT = 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', NEG = 'lowres, bad anatomy';
 const TEST_SZ = Q.get('sizes') ? Q.get('sizes').split(',')[0].split('x').map(Number) : null;   // 動作確認用に全部この大きさで
 const SZ = sz => TEST_SZ || sz;
 const STEPS_N = TEST_SZ ? 2 : 18;
-const MEM_CAP = +(Q.get('cap') || 1536);
 const U = (sz, runs) => ({ unet: { w: SZ(sz)[0], h: SZ(sz)[1], runs, emb: 'synthetic', sample: 'sin', timestep: 500 } });
 const STEPS = [
   { id: 'env', title: '1. 準備（保存済みモデルの確認）',                       run: stepEnv },
   { id: 'v0',  title: '2. 部品の版と Worker の確認',                           run: stepProbe },
-  { id: 'mem', title: `3. GPUメモリの上限（32MBずつ最大${MEM_CAP >= 1024 ? (MEM_CAP / 1024).toFixed(1) + 'GB' : MEM_CAP + 'MB'}まで確保・計算なし）`, run: stepMem, reloadBefore: true },
-  { id: 'y1',  title: `4. 描画部品だけ・小分け版（${SZ([256, 384]).join('×')}・2回）`, run: s => stepDiag(s, U([256, 384], 2)), reloadBefore: true },
-  { id: 'y2',  title: `5. 描画部品だけ・小分け版（${SZ([448, 640]).join('×')}・2回）`, run: s => stepDiag(s, U([448, 640], 2)), reloadBefore: true },
-  { id: 'g1',  title: `6. 本番どおりの生成（軽量 ${SZ([256, 384]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([256, 384])), reloadBefore: true },
-  { id: 'g2',  title: `7. 本番どおりの生成（軽量 ${SZ([448, 640]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([448, 640])), reloadBefore: true },
+  { id: 'y1',  title: `3. 描画部品だけ（${SZ([256, 384]).join('×')}・2回）`, run: s => stepDiag(s, U([256, 384], 2)), reloadBefore: true },
+  { id: 'g1',  title: `4. 本番どおりの生成（軽量 ${SZ([256, 384]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([256, 384])), reloadBefore: true },
+  { id: 'g2',  title: `5. 本番どおりの生成（軽量 ${SZ([448, 640]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([448, 640])), reloadBefore: true },
 ];
-let state = load() || { v: 2, inProgress: false, steps: {} };
+let state = load() || { v: 3, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -157,41 +159,6 @@ async function stepEnv(s) {
   s.summary = `${TIER_LABEL[tier]}・unet ${s.data.unet}`;
 }
 
-// ════════════════ 3. GPU メモリの上限 ════════════════
-//   32MB のバッファを作って中身を書き込み（実際に確保させる）、完了を待つ、を繰り返す。
-//   落ちた場合は「最後に記録された量」が上限の目安。GPU が断った場合（メモリ不足エラー）はそこで止める
-async function stepMem(s) {
-  const dev = await getDevice();
-  let lost = null; dev.lost.then(i => { lost = (i && i.message) || 'GPUが切断されました'; });
-  const P = 32, bufs = [];
-  const src = new Uint8Array(P * MB); for (let i = 0; i < src.length; i += 4096) src[i] = (i >> 12) & 255;
-  mark(s, `確保開始（${P}MBずつ・最大${fmtMB(MEM_CAP)}）`, { reachedMB: 0, capMB: MEM_CAP });
-  try {
-    for (let mb = P; mb <= MEM_CAP; mb += P) {
-      dev.pushErrorScope('out-of-memory');
-      const b = dev.createBuffer({ size: P * MB, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-      bufs.push(b);
-      dev.queue.writeBuffer(b, 0, src);
-      await withTimeout(dev.queue.onSubmittedWorkDone(), 30000, 'GPUへの書き込み');
-      const oom = await dev.popErrorScope();
-      if (oom) { s.refused = mb; mark(s, `${fmtMB(mb)} 目で GPU がメモリ不足を返した`); break; }
-      if (lost) throw new Error('GPUが切断されました: ' + lost);
-      s.reachedMB = mb;
-      if (mb % 64 === 0) mark(s, `${fmtMB(mb)} 確保・書き込み済み`);
-    }
-    mark(s, `確保完了（${fmtMB(s.reachedMB)}）・3秒保持`);
-    await sleep(3000);
-    if (lost) throw new Error('GPUが切断されました: ' + lost);
-    mark(s, '保持後も生存');
-    s.ok = true;
-    s.summary = s.refused ? `GPU が ${fmtMB(s.refused)} 目で断った（落ちずに済んだ）` : `OK（${fmtMB(s.reachedMB)} まで確保できた）`;
-  } finally {
-    for (const b of bufs) { try { b.destroy(); } catch (e) {} }
-    try { dev.destroy(); } catch (e) {}
-    await sleep(1000);
-  }
-}
-
 function loadScript(src) {
   return new Promise((res, rej) => { const e = document.createElement('script'); e.src = src; e.onload = res; e.onerror = () => rej(new Error('読み込めません: ' + src)); document.head.appendChild(e); });
 }
@@ -211,7 +178,7 @@ async function stepProbe(s) {
   s.summary = !fresh ? '古い版のままです（アプリを開き直してください）' : p.ok ? `OK（版 ${AV}）` : '不可: ' + p.reason;
   if (!fresh) throw new Error('古い版の部品が読み込まれています。アプリを2回開き直してから「最初からやり直す」を押してください');
 }
-// 6〜7. アプリと同じ生成（LOCAL_GEN.generate）
+// 4〜5. アプリと同じ生成（LOCAL_GEN.generate）
 const PH = { 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章部品の作成完了', text: '文章の解析',
   'unet:load': '描画部品の読込', 'unet:run': '描画部品の作成完了→描画開始', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ部品の作成完了', vae: '仕上げ' };
 async function stepGen(s, size) {
@@ -241,7 +208,7 @@ async function stepGen(s, size) {
   mark(s, '完了後 2秒 生存');
   s.ok = true; s.summary = `OK（1工程 ${(r.msPerStep / 1000).toFixed(1)}秒・全体 ${(r.ms / 1000).toFixed(0)}秒）`;
 }
-// 4〜5. 描画部品だけを Worker で動かす
+// 3. 描画部品だけを Worker で動かす
 async function stepDiag(s, plan) {
   await useLocalGen();
   if (!LOCAL_GEN.diagRun) throw new Error('古い版の部品です（開き直してください）');
@@ -264,14 +231,12 @@ function verdict() {
   const at = id => !st[id] ? '未実施' : st[id].status === 'crashed' ? `💥（${st[id].mark || '?'}）` : st[id].status === 'error' ? `⚠（${st[id].error}）` : `○ ${st[id].summary || ''}`;
   const lines = STEPS.slice(2).map(d => `${d.title.replace(/^\d+\.\s*/, '')}: ${at(d.id)}`);
   const ok = id => st[id] && st[id].status === 'done', ng = id => st[id] && st[id].status === 'crashed';
-  const msg = [], m = st.mem;
-  if (ng('mem')) msg.push(`GPUメモリを約${fmtMB(m.reachedMB || 0)}確保したところで強制終了 → メモリ量の上限が原因（描画部品の重み約450MB＋作業領域が上限に近い）`);
-  else if (ok('mem') && m.refused) msg.push(`GPU が ${fmtMB(m.refused)} 目で確保を断った（強制終了はしない）`);
-  else if (ok('mem')) msg.push(`GPUメモリは ${fmtMB(m.reachedMB)} まで確保できた（確保して書き込むだけなら落ちない）`);
+  const msg = [];
   if (ok('g2')) msg.push('448×640 の本番生成に成功 → アプリでも端末内生成が使えます（⚙設定で「常に使う」を押すと一時停止が解除されます）');
-  else if (ok('g1')) msg.push('256×384 なら本番生成に成功 → アプリの端末内生成を、この端末では 256×384（拡大して仕上げ）に切り替えます');
-  else if (ok('y1') && ng('g1')) msg.push('描画部品だけなら動くが、通しの生成で落ちる → 部品の切り替えか工程数が原因');
-  else if (ng('y1')) msg.push('小分けにしても 256×384 で落ちる → 自己注意以外（重みの量・他の計算）が原因');
+  else if (ok('g1')) msg.push('256×384 は成功、448×640 は失敗 → 送信の待ち合わせをさらに細かくするか、この端末は 256×384（拡大して仕上げ）にします');
+  else if (ok('y1')) msg.push('描画部品だけなら動くが、通しの生成で落ちる → 記録の「GPU待ち」の値を見て調整します');
+  else msg.push('対策後も落ちる → 強制終了の記録（com.apple.WebKit.GPU）の中身で、別の原因か確かめます');
+  if (ng('g1') || ng('g2') || ng('y1')) msg.push('強制終了の記録（設定 → プライバシーとセキュリティ → 解析と改善 → 解析データ の com.apple.WebKit.GPU-日付）も送ってください');
   return lines.join('\n') + (msg.length ? '\n→ ' + msg.join('\n→ ') : '');
 }
 

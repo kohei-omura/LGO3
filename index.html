@@ -472,7 +472,7 @@
     </div>
   </div>
 </div>
-<script src="assets/ai/local-gen.js?v=2026-11-15b"></script>
+<script src="assets/ai/local-gen.js?v=2026-11-15c"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -3440,7 +3440,7 @@ function localSafeOptions() {
   if(localCrashCount() < 1) return {};
   return { tier: LOCAL_SAFE.tier, size: Object.assign({}, LOCAL_SAFE.size) };   // 軽量モデルが未保存なら保存済みのモデルで（LOCAL_GEN 側で判断）
 }
-const LOCAL_SAFE = { tier: 'S', size: { w: 384, h: 576 } };
+const LOCAL_SAFE = { tier: 'S', size: { w: 256, h: 384 } };   // 実機テスト第13回で完走した大きさ（拡大して仕上げる）
 const LOCAL_PHASE_LABEL = { start: '準備', 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章の解析', text: '文章の解析',
   'unet:load': '描画部品の読込', 'unet:run': '描画（1工程目）', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ', vae: '仕上げ' };
 function checkLocalCrash() {
@@ -3463,6 +3463,34 @@ function checkLocalCrash() {
     if(getAiSrEnabled()) { setAiSrEnabled(false); showToast('前回、AI超解像中に強制終了したため AI超解像をOFFにしました'); }
   }
 }
+// ── 診断用: アプリを開いた状態でのメモリの余裕を測る（index.html?memtest=1・diag-gen.html から開く） ──
+//   iPhone はページごとにメモリ上限（2048MB）があり、アプリ本体が使っている分だけ端末内生成の余裕が減る。
+//   32MB ずつ GPU バッファを確保して、強制終了される直前の量を記録する（わざと落とすので、生成の強制終了には数えない）
+async function runMemTest() {
+  const K = 'lg_memtest', prev = lsGet(K);
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top, 0px) + 12px);z-index:99999;background:#1a1330;color:#fff;border:1px solid #c9a227;border-radius:12px;padding:14px;font-size:.85rem;line-height:1.7;white-space:pre-wrap';
+  document.body.appendChild(box);
+  const how = navigator.standalone ? 'ホーム画面アプリ' : 'ブラウザ';
+  const back = '\n\n診断ページに戻って、この数字を伝えてください。';
+  if(prev != null) {     // 測定中に落ちて開き直された → 結果を表示
+    lsSet(K, null);
+    box.textContent = `【アプリ本体のメモリ余裕】 ${prev} MB（${how}）\n診断ページ単体で測った余裕は 1664 MB でした。` + back;
+    return;
+  }
+  box.textContent = 'アプリ本体のメモリ余裕を測ります。8秒後に始めます…\n途中でページが落ちるのが正常です。落ちたら、そのまま（または開き直して）結果の表示を待ってください。';
+  await new Promise(r => setTimeout(r, 8000));   // アプリの初期表示が落ち着いてから
+  try {
+    await LOCAL_GEN.status();
+    lsSet(K, '0');
+    const out = await LOCAL_GEN.diagRun(null, { headroom: { when: 'none', capMB: 2400 } }, text => {
+      const m = /^余裕 (\d+) MB/.exec(text);
+      if(m) { lsSet(K, m[1]); box.textContent = `測定中… 余裕 ${m[1]} MB まで確保（${how}）`; }
+    });
+    lsSet(K, null);
+    box.textContent = `【アプリ本体のメモリ余裕】 ${out && out.余裕 ? out.余裕.確保 : '?'} MB 以上（${how}・落ちずに終了）` + back;
+  } catch(e) { lsSet(K, null); box.textContent = '測定できませんでした: ' + (e && e.message || e); }
+}
 const fmtGB = b => (b / 1073741824).toFixed(b >= 1073741824 * 10 ? 0 : 2) + 'GB';
 let _localDl = null;   // ダウンロード中のモデル id
 
@@ -3484,7 +3512,7 @@ async function refreshLocalStatus() {
       ? `✅ 保存済み: ${saved.map(([, t]) => `${esc(t.short)}（${fmtGB(t.bytes)}）`).join('・')}`
       : '⬜ モデル未保存（ダウンロードすると通信なしで生成できます）')
     + (localCrashPaused() ? '<br>⏸ 強制終了が続いたため一時停止中（上のボタンを押すと再開）'
-       : localCrashCount() ? '<br>🛟 前回強制終了したため、軽い設定（軽量モデル・384×576）で生成します' : '')
+       : localCrashCount() ? '<br>🛟 前回強制終了したため、軽い設定（軽量モデル・256×384）で生成します' : '')
     + (saved.length ? '<br><a href="diag-gen.html" style="color:var(--violet)">🔬 端末内生成テスト（落ちる原因を調べる）</a>' : '')
     + `<br><span style="color:var(--muted)">端末の空き容量: ${st.quota ? fmtGB(Math.max(0, st.quota - st.usage)) : '不明'}${st.persisted ? '' : '（Safariが自動削除する場合あり）'}</span>`;
   btnM.disabled = st.tiers.M.ready; btnM.textContent = st.tiers.M.ready ? '✅ 標準モデル保存済み' : '⬇ 標準モデル（約0.95GB）';
@@ -3589,6 +3617,7 @@ async function init() {
 
   checkLocalCrash();
   if(window.LOCAL_GEN) LOCAL_GEN.status().catch(() => {});   // 端末内生成モデルの保存状況
+  if(window.LOCAL_GEN && /[?&]memtest=1/.test(location.search)) runMemTest();   // 診断用
   // 暦は端末内の天文計算で完結するため、通信を待たずに即描画できる
   try { localStorage.removeItem('lgo_cal_v1'); } catch(e){}   // 旧・外部暦キャッシュの掃除
   if(!refreshDivination()) {

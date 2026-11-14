@@ -14,7 +14,7 @@
      ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name } / { type:'log', text }（debug 時）
    ════════════════════════════════════════════════════════════ */
 'use strict';
-const WORKER_VERSION = '2026-11-14b';
+const WORKER_VERSION = '2026-11-14c';
 
 async function probe(m) {
   const out = { type: 'probe', gpu: !!(self.navigator && navigator.gpu), adapter: false, f16: false,
@@ -97,6 +97,7 @@ function installPace(cfg, log) {
     return new Uint8Array(data, o, size != null ? size : data.byteLength - o).slice();
   };
   Q.submit = function (cbs) {
+    PACE.lastQ = this;
     if (!PACE.fifo.length && (!PACE.active || PACE.inflight < limit())) return realSubmit(this, cbs);
     PACE.fifo.push({ k: 's', q: this, cbs: Array.from(cbs) });
   };
@@ -109,6 +110,7 @@ function installPace(cfg, log) {
     PACE.fifo.push({ k: 't', q: this, dst, data: bytesOf(data), layout, size });
   };
   Q.onSubmittedWorkDone = function () { return drained().then(() => oDone.call(this)); };
+  PACE.settle = async () => { await drained(); if (PACE.lastQ) await oDone.call(PACE.lastQ); };   // 送った命令がすべて終わるまで待つ
   B.mapAsync = function (...a) { return drained().then(() => oMap.apply(this, a)); };
   B.destroy = function () {
     if (!PACE.fifo.length) return oDestroy.call(this);
@@ -234,14 +236,40 @@ const statsOf = a => { let mx = 0, bad = 0, sum = 0; for (let i = 0; i < a.lengt
 async function fileDir(path) { let d = await navigator.storage.getDirectory(); for (const p of path.split('/').filter(Boolean)) d = await d.getDirectoryHandle(p, { create: true }); return d; }
 async function saveBin(path, name, u8) { const h = await (await (await fileDir(path)).getFileHandle(name, { create: true })).createSyncAccessHandle(); try { h.truncate(0); h.write(u8, { at: 0 }); h.flush(); } finally { h.close(); } }
 async function loadBin(path, name) { const h = await (await (await fileDir(path)).getFileHandle(name)).createSyncAccessHandle(); try { const u8 = new Uint8Array(h.getSize()); h.read(u8, { at: 0 }); return u8; } finally { h.close(); } }
+// 診断用: メモリの余裕を測る。32MB ずつ GPU バッファを確保して書き込み、強制終了（または拒否）されるまで続ける。
+//   WebKit は GPU バッファもページ側のメモリ（iPhone 15 Pro は上限 2048MB）に数えるので、
+//   「落ちる直前に確保できた量」がその時点の余裕になる。確保量は逐次 log で知らせ、ページ側が保存する
+async function headroom(capMB, log) {
+  const ad = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  const dev = await ad.requestDevice();
+  const P = 32, src = new Uint8Array(P << 20); for (let i = 0; i < src.length; i += 4096) src[i] = (i >> 12) & 255;
+  const bufs = []; let got = 0, refused = false;
+  for (let mb = P; mb <= capMB; mb += P) {
+    dev.pushErrorScope('out-of-memory');
+    const b = dev.createBuffer({ size: P << 20, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    bufs.push(b);
+    dev.queue.writeBuffer(b, 0, src);
+    await dev.queue.onSubmittedWorkDone();
+    if (await dev.popErrorScope()) { refused = true; break; }
+    got = mb;
+    log(`余裕 ${got} MB 確保`);
+    await new Promise(r => setTimeout(r, 25));   // ページ側が記録を保存する間を空ける
+  }
+  for (const b of bufs) { try { b.destroy(); } catch (e) {} }
+  try { dev.destroy(); } catch (e) {}
+  return { 確保: got, 拒否: refused };
+}
 async function diag(m) {
   loadOrt(m);
   const C = LocalGenCore, env = makeEnv(m), p = m.plan, out = {}, L = 77, HS = 77 * 768;
   const log = text => self.postMessage({ type: 'log', text });
   const prog = ph => log(ph);
+  const settle = async ms => { if (PACE.settle) await PACE.settle(); await new Promise(r => setTimeout(r, ms)); };
+  const hr = async when => { if (p.headroom && p.headroom.when === when) { log(`余裕の測定 開始（${when}）`); out.余裕 = await headroom(p.headroom.capMB || 2400, log); log('余裕の測定 終了 ' + JSON.stringify(out.余裕)); } };
   if (env.begin) { await env.begin(); log('つなぎ 作成'); }
   try {
     let hid = null;
+    await hr('none');
     if (p.text) {
       const t = await env.loadTokenizer(), tok = new C.CLIPTokenizer(t.vocab, t.merges);
       const neg = tok.encode(p.negative || ''), pos = tok.encode(p.prompt || '');
@@ -261,7 +289,9 @@ async function diag(m) {
       else { sample = new Float32Array(n); for (let i = 0; i < n; i++) sample[i] = Math.sin(i * 0.37) * 0.5; }
       const ctx = [0, 1].map(k => C._fromF32(ort, dt, hid.subarray(k * HS, (k + 1) * HS), [1, L, 768]));
       await C._withSession(env, 'unet', { batch: 1, h: lh, w: lw }, async s => {
-        for (let r = 0; r < (u.runs || 2); r++) {
+        await hr('load');
+        if (p.headroom && p.headroom.when === 'settle') { const t = performance.now(); await settle(3000); log(`読み込み後の待ち 完了（${((performance.now() - t) / 1000).toFixed(1)}秒）`); await hr('settle'); }
+        for (let r = 0; r < (u.runs == null ? 2 : u.runs); r++) {
           log(`${r + 1}回目の実行中…`);
           const ts = C._fromF32(ort, dt, new Float32Array([u.timestep || 999]), []);
           const o = C.toF32((await s.run({ sample: C._fromF32(ort, dt, sample, [1, 4, lh, lw]), timestep: ts, encoder_hidden_states: ctx[r % 2] })).out_sample.data);
@@ -269,6 +299,7 @@ async function diag(m) {
           log(`${r + 1}回目 完了 ` + JSON.stringify(out[`描画${r + 1}回目の出力`]));
           if (PACE.on) { out[`描画${r + 1}回目の送信`] = paceStats(true); log(`${r + 1}回目の送信 ` + JSON.stringify(out[`描画${r + 1}回目の送信`])); }
         }
+        if (p.headroom && p.headroom.when === 'run') { await settle(3000); await hr('run'); }
       }, prog);
     }
     return out;

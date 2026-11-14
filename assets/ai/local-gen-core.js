@@ -319,7 +319,7 @@
     };
   }
 
-  const VERSION = '2026-11-14b';
+  const VERSION = '2026-11-14c';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
                 _withSession: withSession, _fromF32: fromF32 };   // _ 付きは診断用
   root.LocalGenCore = api;

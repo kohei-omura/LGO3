@@ -14,7 +14,7 @@
      ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name } / { type:'log', text }（debug 時）
    ════════════════════════════════════════════════════════════ */
 'use strict';
-const WORKER_VERSION = '2026-11-14c';
+const WORKER_VERSION = '2026-11-15a';
 
 async function probe(m) {
   const out = { type: 'probe', gpu: !!(self.navigator && navigator.gpu), adapter: false, f16: false,
@@ -38,7 +38,7 @@ async function probe(m) {
 //   送信の順序を保つため、待っている間の writeBuffer / バッファ破棄 / 読み出し(mapAsync) も同じ列に並べる
 //   待たせるのは計算の実行中（session.run）だけ。部品の読み込み中に待たせると、重みの転送用の
 //   一時バッファが破棄されずにたまり、メモリを大きく使う（第10回で読み込み直後に落ちた）
-const PACE = { on: false, active: 0, budget: 0.8, min: 2, max: 16, inflight: 0, fifo: [], waiters: [], svc: [], lastDone: 0,
+const PACE = { on: false, bypass: false, active: 0, budget: 0.8, min: 2, max: 16, inflight: 0, fifo: [], waiters: [], svc: [], lastDone: 0,
                n: 0, maxWait: 0, maxSvc: 0, reported: 0, log: null };
 function paceStats(reset) {
   const r = { 送信: PACE.n, 待ち最大: +PACE.maxWait.toFixed(2), 実行最大: +PACE.maxSvc.toFixed(2) };
@@ -49,6 +49,7 @@ function installPace(cfg, log) {
   if (PACE.on || !self.GPUQueue || !self.GPUBuffer) return;
   PACE.on = true; PACE.log = log || null;
   if (cfg) for (const k of ['budget', 'min', 'max']) if (cfg[k] != null) PACE[k] = cfg[k];
+  PACE.bypass = !!(cfg && cfg.bypass);   // 待ち合わせをせず、待ち時間の記録だけ取る
   const Q = GPUQueue.prototype, B = GPUBuffer.prototype, D = GPUDevice.prototype;
   const oSubmit = Q.submit, oWrite = Q.writeBuffer, oWriteTex = Q.writeTexture, oDone = Q.onSubmittedWorkDone,
         oMap = B.mapAsync, oDestroy = B.destroy, oDevDestroy = D.destroy;
@@ -68,7 +69,7 @@ function installPace(cfg, log) {
       if (svc > PACE.maxSvc) PACE.maxSvc = svc;
       if (wait > PACE.maxWait) {
         PACE.maxWait = wait;
-        if (PACE.log && wait >= 0.5 && wait >= PACE.reported + 0.25) { PACE.reported = wait; PACE.log(`GPU待ち 最大 ${wait.toFixed(2)}秒（1回の実行 最大 ${PACE.maxSvc.toFixed(2)}秒）`); }
+        if (PACE.log && wait >= 0.5 && wait >= PACE.reported * 1.5) {   // 記録は1.5倍に伸びた時だけ PACE.reported = wait; PACE.log(`GPU待ち 最大 ${wait.toFixed(2)}秒（1回の実行 最大 ${PACE.maxSvc.toFixed(2)}秒）`); }
       }
       pump();
     }, () => { PACE.inflight--; pump(); });
@@ -98,7 +99,7 @@ function installPace(cfg, log) {
   };
   Q.submit = function (cbs) {
     PACE.lastQ = this;
-    if (!PACE.fifo.length && (!PACE.active || PACE.inflight < limit())) return realSubmit(this, cbs);
+    if (PACE.bypass || (!PACE.fifo.length && (!PACE.active || PACE.inflight < limit()))) return realSubmit(this, cbs);
     PACE.fifo.push({ k: 's', q: this, cbs: Array.from(cbs) });
   };
   Q.writeBuffer = function (b, off, data, dOff, size) {
@@ -122,6 +123,16 @@ function installPace(cfg, log) {
     if (!PACE.fifo.length) for (const w of PACE.waiters.splice(0)) w();
     return oDevDestroy.call(this);
   };
+}
+
+// 使い終わった GPU 関連オブジェクト（バッファや命令のまとまりの JS 側の殻）は、GC で回収されるまで
+// GPU メモリをつかんだままになる。wasm 中心の処理では GC がなかなか走らないため、大きめの領域を
+// 確保して捨てることで GC を促す（中身には触れないので実メモリはほぼ使わない）
+function gcPoke() { for (let i = 0; i < 8; i++) { const a = new ArrayBuffer(16 << 20); if (a.byteLength < 0) break; } }
+async function settleGpu(o) {
+  if (PACE.settle) await PACE.settle();   // 送った命令がすべて終わるまで
+  if (o.gc) gcPoke();
+  if (o.waitMs) await new Promise(r => setTimeout(r, o.waitMs));
 }
 
 let _ort = false;
@@ -172,9 +183,12 @@ function makeEnv(m) {
   const extraOpts = m.ep === 'webgpu' && m.pace && m.pace.pending
     ? { extra: { 'ep.webgpuexecutionprovider.maxNumPendingDispatches': String(m.pace.pending) } } : {};
   const ka = m.ep === 'webgpu' && m.keepAlive !== false ? LocalGenCore.keepAlive(ort, epOf('unet'), extraOpts) : null;
+  const st = m.ep === 'webgpu' && m.settle ? m.settle : null;
   return {
     ort, dtype: m.dtype,
     begin: ka && ka.begin, end: ka && ka.end,
+    settle: st ? () => settleGpu(st) : null,
+    tick: st && st.gc ? gcPoke : null,
     loadModel: async comp => {
       const name = comp + '.onnx';
       const fh = await (await dirOf(m.root + '/' + m.tier)).getFileHandle(name);
@@ -264,7 +278,6 @@ async function diag(m) {
   const C = LocalGenCore, env = makeEnv(m), p = m.plan, out = {}, L = 77, HS = 77 * 768;
   const log = text => self.postMessage({ type: 'log', text });
   const prog = ph => log(ph);
-  const settle = async ms => { if (PACE.settle) await PACE.settle(); await new Promise(r => setTimeout(r, ms)); };
   const hr = async when => { if (p.headroom && p.headroom.when === when) { log(`余裕の測定 開始（${when}）`); out.余裕 = await headroom(p.headroom.capMB || 2400, log); log('余裕の測定 終了 ' + JSON.stringify(out.余裕)); } };
   if (env.begin) { await env.begin(); log('つなぎ 作成'); }
   try {
@@ -289,8 +302,7 @@ async function diag(m) {
       else { sample = new Float32Array(n); for (let i = 0; i < n; i++) sample[i] = Math.sin(i * 0.37) * 0.5; }
       const ctx = [0, 1].map(k => C._fromF32(ort, dt, hid.subarray(k * HS, (k + 1) * HS), [1, L, 768]));
       await C._withSession(env, 'unet', { batch: 1, h: lh, w: lw }, async s => {
-        await hr('load');
-        if (p.headroom && p.headroom.when === 'settle') { const t = performance.now(); await settle(3000); log(`読み込み後の待ち 完了（${((performance.now() - t) / 1000).toFixed(1)}秒）`); await hr('settle'); }
+        await hr('load');   // 読み込み後の待ち（env.settle）は _withSession の中で済んでいる
         for (let r = 0; r < (u.runs == null ? 2 : u.runs); r++) {
           log(`${r + 1}回目の実行中…`);
           const ts = C._fromF32(ort, dt, new Float32Array([u.timestep || 999]), []);
@@ -298,8 +310,10 @@ async function diag(m) {
           out[`描画${r + 1}回目の出力`] = statsOf(o);
           log(`${r + 1}回目 完了 ` + JSON.stringify(out[`描画${r + 1}回目の出力`]));
           if (PACE.on) { out[`描画${r + 1}回目の送信`] = paceStats(true); log(`${r + 1}回目の送信 ` + JSON.stringify(out[`描画${r + 1}回目の送信`])); }
+          if (u.gcEachRun) gcPoke();
         }
-        if (p.headroom && p.headroom.when === 'run') { await settle(3000); await hr('run'); }
+        if (u.after) await settleGpu(u.after);
+        await hr('run');
       }, prog);
     }
     return out;

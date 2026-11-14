@@ -222,6 +222,7 @@
     try { s = await env.ort.InferenceSession.create(src, opts); }
     finally { if (done) { try { done(); } catch (e) {} } }   // 読み出し係の後始末（ファイルを閉じる等）
     src = null; opts = null;                       // 重みのコピーを手放して GC に回収させる
+    if (env.settle) await env.settle();            // 読み込みで出た一時メモリが返るのを待つ（iPhone の上限対策）
     if (prog) prog(comp + ':run', 0);              // 作成完了 → ここから実行（落ちた段階の切り分け用）
     try { return await fn(s); }
     finally { try { await s.release(); } catch (e) {} s = null; }
@@ -276,6 +277,7 @@
         const eps = new Float32Array(n);
         for (let k = 0; k < n; k++) eps[k] = eu[k] + g * (ec[k] - eu[k]);
         lat = sch.step(i, eps, lat);
+        if (env.tick) await env.tick();              // 工程ごとに不要メモリの回収を促す
         prog('unet', (i + 1) / steps);
       }
     }, prog);
@@ -319,7 +321,7 @@
     };
   }
 
-  const VERSION = '2026-11-14c';
+  const VERSION = '2026-11-15a';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
                 _withSession: withSession, _fromF32: fromF32 };   // _ 付きは診断用
   root.LocalGenCore = api;

@@ -39,7 +39,7 @@
 <body>
 <div class="wrap">
   <h1>🔬 端末内生成テスト</h1>
-  <p class="lead">メモリの余裕を測ります。各手順で、わざと上限までメモリを使って落とします（<b>手順3〜6は落ちるのが正常</b>です）。所要時間は2〜3分です。<br>
+  <p class="lead">メモリ対策の効果を測り、対策版で生成を試します。手順3〜6は、わざと上限までメモリを使って落とします（<b>落ちるのが正常</b>です）。手順7〜8は対策版の生成で、落ちなければ成功です。所要時間は5〜8分です。<br>
     使うモデル: <b id="tierName">確認中…</b></p>
   <div class="warn">⚠ 途中で画面が真っ白になったり、勝手に再読み込みされることがあります（それが調べたい現象です）。<br>
     「問題が繰り返し起きました」と出ても、<b>このページを開き直せば続きから自動で再開</b>します。全部の手順が終わるまで、開き直しを繰り返してください。<br>
@@ -58,7 +58,7 @@
 <script>
 'use strict';
 /* ════════════════════════════════════════════════════════════
-   端末内生成テスト（第11回）: メモリの余裕を段階ごとに測る
+   端末内生成テスト（第12回）: メモリ対策の効果を測る
    - アプリが保存したモデル（OPFS: lgo-localgen/<tier>/）を使う。通信なし
    - 手順ごと・手順内の段階ごとに localStorage へ記録 → 落ちても開き直せば
      「どの手順の、どの段階で落ちたか」が残り、次の手順から再開する
@@ -82,31 +82,41 @@
    - 第11回: 各段階で 32MB ずつ GPU バッファを確保して、落ちる直前の量（＝その時点の余裕）を記録する
        A 何も読み込まない / B 描画部品の読み込み直後 / C 読み込み後に命令の完了＋3秒待つ / D 256×384 を2回実行後
      A−B などの差が、その段階で実際に使っているメモリになる
+   - 第11回の結果（軽量・256×384。上限 2048MB、何も読み込まない状態の余裕 1664MB）:
+       読み込み直後 使用 約1120MB / 命令の完了＋3秒待つと 約384MB / 2回実行後（待ち合わせあり・3秒後）約896MB
+     → 読み込みの一時メモリ（転送用バッファなど約740MB）が残ったまま描画を始めて上限を超えていた。
+       実行後も、使い終わった GPU 関連オブジェクトが回収（GC）されるまでメモリをつかんでいる
+   - 第12回: ① 読み込み後に「回収を促す＋0.3秒」で足りるか ② 実行後の残りは、待ち合わせなし／回収を促す、で減るか
+            ③ 6回実行で増え続けないか ④ 対策版（読み込み後に3秒待つ・工程ごとに回収を促す・待ち合わせなし）で生成
    - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128&pace=0&cap=96（pace=0 で待ち合わせなし・cap は余裕の測定の上限MB）
    ════════════════════════════════════════════════════════════ */
-const KEY = 'lgo_diag_gen_v5';
+const KEY = 'lgo_diag_gen_v6';
 const MB = 1048576;
 const Q = new URLSearchParams(location.search);
 const EP = Q.get('ep') || 'webgpu';
 const ROOT_DIR = 'lgo-localgen';
 const COMP = 'unet';
-const AV = '2026-11-14c';
+const AV = '2026-11-15a';
 const PROMPT = 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', NEG = 'lowres, bad anatomy';
 const TEST_SZ = Q.get('sizes') ? Q.get('sizes').split(',')[0].split('x').map(Number) : null;   // 動作確認用に全部この大きさで
 const SZ = sz => TEST_SZ || sz;
 const STEPS_N = TEST_SZ ? 2 : 18;
 const U = (sz, runs) => ({ unet: { w: SZ(sz)[0], h: SZ(sz)[1], runs, emb: 'synthetic', sample: 'sin', timestep: 500 } });
 const CAP = +(Q.get('cap') || 2400);
-const HR = (when, runs) => Object.assign(when === 'none' ? {} : U([256, 384], runs), { headroom: { when, capMB: CAP } });
+const BASE = 1664;   // 第11回で測った「何も読み込まない状態の余裕」(MB)
+const PACE_ON = { pending: 2, budget: 0.8, min: 2, max: 16 }, PACE_OFF = { bypass: true };
+const HU = (runs, o) => ({ unet: Object.assign(U([256, 384], runs).unet, o.unet || {}), headroom: { when: o.when, capMB: CAP }, pace: o.pace || PACE_OFF, settle: o.settle || { waitMs: 3000, gc: true } });
 const STEPS = [
   { id: 'env', title: '1. 準備（保存済みモデルの確認）',                       run: stepEnv },
   { id: 'v0',  title: '2. 部品の版と Worker の確認',                           run: stepProbe },
-  { id: 'hA',  title: '3. 余裕A: 何も読み込まない状態',                        run: s => stepDiag(s, HR('none')), reloadBefore: true },
-  { id: 'hB',  title: '4. 余裕B: 描画部品を読み込んだ直後',                    run: s => stepDiag(s, HR('load', 0)), reloadBefore: true },
-  { id: 'hC',  title: '5. 余裕C: 読み込み後、命令の完了＋3秒待ってから',       run: s => stepDiag(s, HR('settle', 0)), reloadBefore: true },
-  { id: 'hD',  title: `6. 余裕D: ${SZ([256, 384]).join('×')} を2回実行した後`, run: s => stepDiag(s, HR('run', 2)), reloadBefore: true },
+  { id: 'hE',  title: '3. 余裕E: 読み込み後に回収を促して0.3秒',               run: s => stepDiag(s, HU(0, { when: 'load', settle: { waitMs: 300, gc: true } })), reloadBefore: true },
+  { id: 'hF',  title: '4. 余裕F: 2回実行（待ち合わせなし）→3秒待つ',           run: s => stepDiag(s, HU(2, { when: 'run', unet: { after: { waitMs: 3000, gc: false } } })), reloadBefore: true },
+  { id: 'hG',  title: '5. 余裕G: 2回実行（待ち合わせあり）→回収を促す',        run: s => stepDiag(s, HU(2, { when: 'run', pace: PACE_ON, unet: { after: { waitMs: 300, gc: true } } })), reloadBefore: true },
+  { id: 'hH',  title: '6. 余裕H: 6回実行（待ち合わせなし・毎回 回収を促す）',  run: s => stepDiag(s, HU(6, { when: 'run', unet: { gcEachRun: true, after: { waitMs: 300, gc: true } } })), reloadBefore: true },
+  { id: 'g1',  title: `7. 対策版の生成（軽量 ${SZ([256, 384]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([256, 384])), reloadBefore: true },
+  { id: 'g2',  title: `8. 対策版の生成（軽量 ${SZ([448, 640]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([448, 640])), reloadBefore: true },
 ];
-let state = load() || { v: 5, inProgress: false, steps: {} };
+let state = load() || { v: 6, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -249,10 +259,14 @@ function verdict() {
   const ok = id => st[id] && st[id].status === 'done', ng = id => st[id] && st[id].status === 'crashed';
   // 余裕（MB）: 落ちた場合は最後に確保できた量、落ちなかった場合は確保できた量（上限まで届いた・拒否された）
   const room = id => st[id] && st[id].room != null ? st[id].room : null;
-  const A = room('hA'), msg = [];
-  const use = (id, label) => { const r = room(id); if (A != null && r != null) msg.push(`${label}: 余裕 ${r} MB → 使用量 約 ${A - r} MB`); else if (st[id] && fin(st[id])) msg.push(`${label}: 測定の前に終了（${st[id].mark || st[id].error || '?'}）`); };
-  if (A != null) msg.push(`何も読み込まない状態の余裕: ${A} MB`);
-  use('hB', '描画部品の読み込み直後'); use('hC', '読み込み後に待ってから'); use('hD', '2回実行した後');
+  const A = BASE, msg = [];
+  const use = (id, label) => { const r = room(id); if (r != null) msg.push(`${label}: 余裕 ${r} MB → 使用量 約 ${A - r} MB`); else if (st[id] && fin(st[id])) msg.push(`${label}: 測定の前に終了（${st[id].mark || st[id].error || '?'}）`); };
+  use('hE', '読み込み後に回収を促して0.3秒（第11回: 直後 1120 / 3秒後 384）');
+  use('hF', '2回実行・待ち合わせなし・3秒後（第11回: 待ち合わせあり 896）');
+  use('hG', '2回実行・待ち合わせあり・回収を促す'); use('hH', '6回実行・毎回 回収を促す');
+  if (ok('g2')) msg.push('448×640 の生成に成功 → アプリでも端末内生成が使えます（⚙設定で「常に使う」を押すと一時停止が解除されます）');
+  else if (ok('g1')) msg.push('256×384 の生成は成功、448×640 は失敗 → 上の数字を見て 448×640 向けの対策を追加します');
+  else if (ng('g1')) msg.push('256×384 の生成も失敗 → 上の数字を見て対策を見直します');
   return lines.join('\n') + (msg.length ? '\n→ ' + msg.join('\n→ ') : '');
 }
 

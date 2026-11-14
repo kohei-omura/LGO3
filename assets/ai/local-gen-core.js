@@ -329,11 +329,12 @@
         const ts = fromF32(ort, dt, new Float32Array([sch.timesteps[i]]), []);
         const sample = fromF32(ort, dt, lat, [1, 4, lh, lw]);
         const eu = toF32((await s.run({ sample, timestep: ts, encoder_hidden_states: ctxUncond })).out_sample.data);
+        if (env.tick) await env.tick();              // 実行ごとに不要メモリの回収を促す
         const ec = toF32((await s.run({ sample, timestep: ts, encoder_hidden_states: ctxCond })).out_sample.data);
         const eps = new Float32Array(n);
         for (let k = 0; k < n; k++) eps[k] = eu[k] + g * (ec[k] - eu[k]);
         lat = sch.step(i, eps, lat);
-        if (env.tick) await env.tick();              // 工程ごとに不要メモリの回収を促す
+        if (env.tick) await env.tick();
         prog('unet', (i + 1) / steps);
       }
     }, prog);
@@ -379,7 +380,7 @@
     };
   }
 
-  const VERSION = '2026-11-15d';
+  const VERSION = '2026-11-15e';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
                 _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles };   // _ 付きは診断用
   root.LocalGenCore = api;

@@ -109,7 +109,7 @@ const Q = new URLSearchParams(location.search);
 const EP = Q.get('ep') || 'webgpu';
 const ROOT_DIR = 'lgo-localgen';
 const COMP = 'unet';
-const AV = '2026-11-15d';
+const AV = '2026-11-15e';
 const PROMPT = 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', NEG = 'lowres, bad anatomy';
 const TEST_SZ = Q.get('sizes') ? Q.get('sizes').split(',')[0].split('x').map(Number) : null;   // 動作確認用に全部この大きさで
 const SZ = sz => TEST_SZ || sz;

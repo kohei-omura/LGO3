@@ -472,7 +472,7 @@
     </div>
   </div>
 </div>
-<script src="assets/ai/local-gen.js?v=2026-11-15d"></script>
+<script src="assets/ai/local-gen.js?v=2026-11-15e"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -3519,6 +3519,7 @@ async function refreshLocalStatus() {
   el.innerHTML = (saved.length
       ? `✅ 保存済み: ${saved.map(([, t]) => `${esc(t.short)}（${fmtGB(t.bytes)}）`).join('・')}`
       : '⬜ モデル未保存（ダウンロードすると通信なしで生成できます）')
+    + (saved.length > 1 && st.readyTier ? `<br>▶ 生成に使うモデル: ${esc(st.tiers[st.readyTier].short)}${st.readyTier === 'S' ? '（この端末はメモリの上限が低いため）' : ''}` : '')
     + (localCrashPaused() ? '<br>⏸ 強制終了が続いたため一時停止中（上のボタンを押すと再開）'
        : localCrashCount() ? '<br>🛟 前回強制終了したため、軽い設定（軽量モデル・256×384）で生成します' : '')
     + (saved.length ? '<br><a href="diag-gen.html" style="color:var(--violet)">🔬 端末内生成テスト（落ちる原因を調べる）</a>' : '')

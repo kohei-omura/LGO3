@@ -14,7 +14,7 @@
      ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name } / { type:'log', text }（debug 時）
    ════════════════════════════════════════════════════════════ */
 'use strict';
-const WORKER_VERSION = '2026-11-15d';
+const WORKER_VERSION = '2026-11-15e';
 
 async function probe(m) {
   const out = { type: 'probe', gpu: !!(self.navigator && navigator.gpu), adapter: false, f16: false,
@@ -340,7 +340,7 @@ self.onmessage = async e => {
     if (m.cmd !== 'generate') return;
     if (m.uploadMode) self.LGO_ORT_UPLOAD = m.uploadMode;
     loadOrt(m);
-    if (m.debug) self.postMessage({ type: 'log', text: `Worker ${WORKER_VERSION} / 計算部品 ${LocalGenCore.VERSION}` });
+    if (m.debug) self.postMessage({ type: 'log', text: `Worker ${WORKER_VERSION} / 計算部品 ${LocalGenCore.VERSION} / モデル ${m.tier} / ${m.opts.width}×${m.opts.height}・${m.opts.steps}工程` });
     const r = await LocalGenCore.generate(makeEnv(m), Object.assign({}, m.opts, {
       onProgress: (ph, f) => self.postMessage({ type: 'progress', ph, f }),
     }));

@@ -45,7 +45,7 @@
   const ORT_Q = '?v=lgo3';   // 実行部品（LGO3 パッチ入り）を修正したら上げる。古いキャッシュを使わせない
   // 本アプリの部品の版。URL に ?v= を付けて、古い保存データ（Service Worker・ブラウザのキャッシュ）を使わせない。
   //   変えたら index.html / diag-gen.html の local-gen.js?v= と sw.js の ASSETS もそろえる
-  const AV = '2026-11-15d', VQ = '?v=' + AV;
+  const AV = '2026-11-15e', VQ = '?v=' + AV;
   const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
                 epOptions: { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' },
                 // GPU への送信の扱い（Worker 内）。bypass: 待ち合わせをせず、待ち時間の記録だけ取る
@@ -60,6 +60,7 @@
                 settle: { waitMs: 3000, small: 400, gc: true },
                 // 仕上げ（VAE）を分割する大きさ: 潜在表現の画素数がこれを超えたらタイルに分ける（1536 = 256×384 相当）
                 vaeMaxArea: 1536,
+                preferLight: /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
                 useWorker: true,      // Worker で実行（重みを1個ずつ読む・終わったら Worker ごと捨てる）。不可なら従来どおり
                 stream: true };
 
@@ -121,8 +122,9 @@
     try { persisted = await navigator.storage.persisted(); } catch (e) {}
     return { tiers, readyTier: readyTier(), usage, quota, persisted };
   }
-  // 使えるモデル（標準を優先）
-  const readyTier = () => (_ready.M ? 'M' : _ready.S ? 'S' : null);
+  // 使えるモデル。ふつうは標準を優先。iPhone / iPad は軽量を優先する
+  //   （ページのメモリ上限が 2048MB 以下で、実機で通しの生成に成功しているのは軽量だけ。標準は描画の1工程目で強制終了した）
+  const readyTier = () => cfg.preferLight ? (_ready.S ? 'S' : _ready.M ? 'M' : null) : (_ready.M ? 'M' : _ready.S ? 'S' : null);
 
   // ── ダウンロード（Worker） ──────────────────────────────────
   let _worker = null, _job = 0, _active = null;

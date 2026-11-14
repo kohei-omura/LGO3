@@ -222,10 +222,66 @@
     try { s = await env.ort.InferenceSession.create(src, opts); }
     finally { if (done) { try { done(); } catch (e) {} } }   // 読み出し係の後始末（ファイルを閉じる等）
     src = null; opts = null;                       // 重みのコピーを手放して GC に回収させる
-    if (env.settle) await env.settle();            // 読み込みで出た一時メモリが返るのを待つ（iPhone の上限対策）
+    if (env.settle) await env.settle(comp);        // 読み込みで出た一時メモリが返るのを待つ（iPhone の上限対策）
     if (prog) prog(comp + ':run', 0);              // 作成完了 → ここから実行（落ちた段階の切り分け用）
     try { return await fn(s); }
     finally { try { await s.release(); } catch (e) {} s = null; }
+  }
+
+  // ── 仕上げ（VAE）のタイル分割 ──────────────────────────────
+  //   VAE は1回の実行で大量の GPU メモリを使う（軽量モデルの計測: 256×384 で作成合計 621MB、448×640 なら約1.8GB）。
+  //   iPhone はページのメモリ上限が 2048MB なので、大きい画像は潜在表現をタイルに分けて順に復元し、
+  //   重なり部分をなだらかに混ぜてつなぐ。maxArea は1タイルの潜在表現の画素数の上限（0 や未指定なら分割しない）
+  function planTiles(lw, lh, maxArea, ov) {
+    if (!maxArea || lw * lh <= maxArea) return null;
+    let best = null;
+    for (let nx = 1; nx <= 6; nx++) for (let ny = 1; ny <= 6; ny++) {
+      const tw = Math.min(lw, Math.ceil((lw + (nx - 1) * ov) / nx)), th = Math.min(lh, Math.ceil((lh + (ny - 1) * ov) / ny));
+      if (tw * th > maxArea) continue;
+      if (!best || nx * ny < best.nx * best.ny || (nx * ny === best.nx * best.ny && tw * th < best.tw * best.th)) best = { nx, ny, tw, th };
+    }
+    if (!best) return null;
+    const pos = (n, full, t) => Array.from({ length: n }, (_, i) => n === 1 ? 0 : Math.round(i * (full - t) / (n - 1)));
+    best.xs = pos(best.nx, lw, best.tw); best.ys = pos(best.ny, lh, best.th);
+    return best;
+  }
+  // 1方向の重み: 隣のタイルと重なる側だけ 0→1 になだらかに変える（画像の端は 1 のまま）
+  function ramp(len, start, full, lapBefore, lapAfter) {
+    const w = new Float32Array(len);
+    for (let i = 0; i < len; i++) {
+      let v = 1;
+      if (start > 0 && i < lapBefore) v = Math.min(v, (i + 0.5) / lapBefore);
+      if (start + len < full && i >= len - lapAfter) v = Math.min(v, (len - i - 0.5) / lapAfter);
+      w[i] = v;
+    }
+    return w;
+  }
+  async function decodeTiled(env, ort, dt, lat, lw, lh, plan, prog) {
+    const W = lw * 8, H = lh * 8, P = W * H, { tw, th, xs, ys } = plan, TW = tw * 8, TH = th * 8, TP = TW * TH;
+    const acc = new Float32Array(3 * P), wsum = new Float32Array(P), total = xs.length * ys.length;
+    await withSession(env, 'vae_decoder', { batch: 1, h: th, w: tw }, async s => {
+      let done = 0;
+      for (let iy = 0; iy < ys.length; iy++) for (let ix = 0; ix < xs.length; ix++) {
+        const x0 = xs[ix], y0 = ys[iy], tile = new Float32Array(4 * th * tw);
+        for (let c = 0; c < 4; c++) for (let y = 0; y < th; y++)
+          tile.set(lat.subarray(c * lw * lh + (y0 + y) * lw + x0, c * lw * lh + (y0 + y) * lw + x0 + tw), c * th * tw + y * tw);
+        const out = toF32((await s.run({ latent_sample: fromF32(ort, dt, tile, [1, 4, th, tw]) })).sample.data);
+        const lapL = ix > 0 ? (xs[ix - 1] + tw - x0) * 8 : 0, lapR = ix < xs.length - 1 ? (x0 + tw - xs[ix + 1]) * 8 : 0;
+        const lapT = iy > 0 ? (ys[iy - 1] + th - y0) * 8 : 0, lapB = iy < ys.length - 1 ? (y0 + th - ys[iy + 1]) * 8 : 0;
+        const wx = ramp(TW, x0 * 8, W, lapL, lapR), wy = ramp(TH, y0 * 8, H, lapT, lapB);
+        for (let y = 0; y < TH; y++) {
+          const row = (y0 * 8 + y) * W + x0 * 8;
+          for (let x = 0; x < TW; x++) {
+            const w = wx[x] * wy[y], q = row + x, t = y * TW + x;
+            acc[q] += out[t] * w; acc[P + q] += out[TP + t] * w; acc[2 * P + q] += out[2 * TP + t] * w; wsum[q] += w;
+          }
+        }
+        if (env.settle) await env.settle('tile');   // タイルごとに使い終わったメモリを返す
+        prog('vae', ++done / (total + 1));
+      }
+    }, prog);
+    for (let q = 0; q < P; q++) { const w = wsum[q] || 1; acc[q] /= w; acc[P + q] /= w; acc[2 * P + q] /= w; }
+    return acc;
   }
 
   // env.begin / env.end があれば生成の前後に呼ぶ（GPU 接続を最後まで保つ「つなぎ」用。下記）
@@ -287,10 +343,12 @@
     // ④ VAE デコーダで画像へ
     prog('vae', 0);
     for (let k = 0; k < n; k++) lat[k] /= VAE_SCALE;
-    const img = await withSession(env, 'vae_decoder', { batch: 1, h: lh, w: lw }, async s => {
-      const out = await s.run({ latent_sample: fromF32(ort, dt, lat, [1, 4, lh, lw]) });
-      return toF32(out.sample.data);
-    }, prog);
+    const tiles = planTiles(lw, lh, env.vaeMaxArea, 8);
+    const img = tiles ? await decodeTiled(env, ort, dt, lat, lw, lh, tiles, prog)
+      : await withSession(env, 'vae_decoder', { batch: 1, h: lh, w: lw }, async s => {
+        const out = await s.run({ latent_sample: fromF32(ort, dt, lat, [1, 4, lh, lw]) });
+        return toF32(out.sample.data);
+      }, prog);
     const rgba = new Uint8ClampedArray(W * H * 4), plane = W * H;
     for (let p = 0; p < plane; p++) {
       rgba[p * 4]     = (img[p] / 2 + 0.5) * 255 + 0.5;
@@ -321,9 +379,9 @@
     };
   }
 
-  const VERSION = '2026-11-15a';
+  const VERSION = '2026-11-15b';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
-                _withSession: withSession, _fromF32: fromF32 };   // _ 付きは診断用
+                _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles };   // _ 付きは診断用
   root.LocalGenCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

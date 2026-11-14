@@ -45,17 +45,21 @@
   const ORT_Q = '?v=lgo3';   // 実行部品（LGO3 パッチ入り）を修正したら上げる。古いキャッシュを使わせない
   // 本アプリの部品の版。URL に ?v= を付けて、古い保存データ（Service Worker・ブラウザのキャッシュ）を使わせない。
   //   変えたら index.html / diag-gen.html の local-gen.js?v= と sw.js の ASSETS もそろえる
-  const AV = '2026-11-15a', VQ = '?v=' + AV;
+  const AV = '2026-11-15b', VQ = '?v=' + AV;
   const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
                 epOptions: { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' },
                 // GPU への送信の扱い（Worker 内）。bypass: 待ち合わせをせず、待ち時間の記録だけ取る
                 //   待ち合わせをする場合は { pending: 2, budget: 0.8, min: 2, max: 16 }
                 //   （pending: 1回に送る命令の数 / budget: GPU に預ける見積もり時間(秒) / min・max: 預ける送信の数）
-                pace: { bypass: true },
+                //   実機テスト第12回: 待ち合わせなしだと仕上げや 448×640 で「GPU待ち」が3秒に達して GPU 側が落ちた → 待ち合わせあり
+                pace: { pending: 2, budget: 0.8, min: 2, max: 16 },
                 // 部品の読み込み後に、一時メモリが返るのを待つ（iPhone はページのメモリ上限が 2048MB。
                 //   実機テスト第11回: 読み込み直後は約1120MB 使用 → 3秒待つと約384MB）
                 //   waitMs: 待つ時間 / gc: 使い終わった GPU 関連オブジェクトの回収（GC）を促す
-                settle: { waitMs: 3000, gc: true },
+                //   small: 文章部品（小さい）とタイルごとの待ち時間
+                settle: { waitMs: 3000, small: 400, gc: true },
+                // 仕上げ（VAE）を分割する大きさ: 潜在表現の画素数がこれを超えたらタイルに分ける（1536 = 256×384 相当）
+                vaeMaxArea: 1536,
                 useWorker: true,      // Worker で実行（重みを1個ずつ読む・終わったら Worker ごと捨てる）。不可なら従来どおり
                 stream: true };
 
@@ -257,7 +261,7 @@
       const abs = p => new URL(cfg.assetBase + p, location.href).href;
       w.postMessage(Object.assign({ cmd: 'generate', tier: id, root: ROOT_DIR, dtype: cfg.tiers[id].dtype,
         ortBase: abs('ort/'), mjsQuery: ORT_Q, coreUrl: abs('local-gen-core.js' + VQ), graphBase: abs(`graphs/${id}/`), assetQuery: VQ, expectVersion: AV,
-        ep: cfg.ep, epOptions: cfg.epOptions, epFor: cfg.epFor, stream: cfg.stream, uploadMode: cfg.uploadMode, keepAlive: cfg.keepAlive, pace: cfg.pace, settle: cfg.settle, debug: !!o.onLog,
+        ep: cfg.ep, epOptions: cfg.epOptions, epFor: cfg.epFor, stream: cfg.stream, uploadMode: cfg.uploadMode, keepAlive: cfg.keepAlive, pace: cfg.pace, settle: cfg.settle, vaeMaxArea: cfg.vaeMaxArea, debug: !!o.onLog,
         opts: { prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance, width: size.w, height: size.h } }, extra || {}));
     });
   }

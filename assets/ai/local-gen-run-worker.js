@@ -14,7 +14,7 @@
      ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name } / { type:'log', text }（debug 時）
    ════════════════════════════════════════════════════════════ */
 'use strict';
-const WORKER_VERSION = '2026-11-15a';
+const WORKER_VERSION = '2026-11-15b';
 
 async function probe(m) {
   const out = { type: 'probe', gpu: !!(self.navigator && navigator.gpu), adapter: false, f16: false,
@@ -129,10 +129,11 @@ function installPace(cfg, log) {
 // GPU メモリをつかんだままになる。wasm 中心の処理では GC がなかなか走らないため、大きめの領域を
 // 確保して捨てることで GC を促す（中身には触れないので実メモリはほぼ使わない）
 function gcPoke() { for (let i = 0; i < 8; i++) { const a = new ArrayBuffer(16 << 20); if (a.byteLength < 0) break; } }
-async function settleGpu(o) {
+async function settleGpu(o, kind) {
   if (PACE.settle) await PACE.settle();   // 送った命令がすべて終わるまで
   if (o.gc) gcPoke();
-  if (o.waitMs) await new Promise(r => setTimeout(r, o.waitMs));
+  const ms = (kind === 'text_encoder' || kind === 'tile') && o.small != null ? o.small : o.waitMs;
+  if (ms) await new Promise(r => setTimeout(r, ms));
 }
 
 let _ort = false;
@@ -187,8 +188,9 @@ function makeEnv(m) {
   return {
     ort, dtype: m.dtype,
     begin: ka && ka.begin, end: ka && ka.end,
-    settle: st ? () => settleGpu(st) : null,
+    settle: st ? kind => settleGpu(st, kind) : null,
     tick: st && st.gc ? gcPoke : null,
+    vaeMaxArea: m.vaeMaxArea || 0,
     loadModel: async comp => {
       const name = comp + '.onnx';
       const fh = await (await dirOf(m.root + '/' + m.tier)).getFileHandle(name);

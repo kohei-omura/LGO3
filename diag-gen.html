@@ -39,7 +39,7 @@
 <body>
 <div class="wrap">
   <h1>🔬 端末内生成テスト</h1>
-  <p class="lead">メモリ対策の効果を測り、対策版で生成を試します。手順3〜6は、わざと上限までメモリを使って落とします（<b>落ちるのが正常</b>です）。手順7〜8は対策版の生成で、落ちなければ成功です。所要時間は5〜8分です。<br>
+  <p class="lead">対策版（読み込み後に待つ・送信の待ち合わせ・仕上げの分割）で、本番どおりの生成を3回試します。今回は<b>落ちずに最後まで進めば成功</b>です。所要時間は5〜8分です。<br>
     使うモデル: <b id="tierName">確認中…</b></p>
   <div class="warn">⚠ 途中で画面が真っ白になったり、勝手に再読み込みされることがあります（それが調べたい現象です）。<br>
     「問題が繰り返し起きました」と出ても、<b>このページを開き直せば続きから自動で再開</b>します。全部の手順が終わるまで、開き直しを繰り返してください。<br>
@@ -58,7 +58,7 @@
 <script>
 'use strict';
 /* ════════════════════════════════════════════════════════════
-   端末内生成テスト（第12回）: メモリ対策の効果を測る
+   端末内生成テスト（第13回）: 対策版で通しの生成
    - アプリが保存したモデル（OPFS: lgo-localgen/<tier>/）を使う。通信なし
    - 手順ごと・手順内の段階ごとに localStorage へ記録 → 落ちても開き直せば
      「どの手順の、どの段階で落ちたか」が残り、次の手順から再開する
@@ -88,35 +88,34 @@
        実行後も、使い終わった GPU 関連オブジェクトが回収（GC）されるまでメモリをつかんでいる
    - 第12回: ① 読み込み後に「回収を促す＋0.3秒」で足りるか ② 実行後の残りは、待ち合わせなし／回収を促す、で減るか
             ③ 6回実行で増え続けないか ④ 対策版（読み込み後に3秒待つ・工程ごとに回収を促す・待ち合わせなし）で生成
-   - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128&pace=0&cap=96（pace=0 で待ち合わせなし・cap は余裕の測定の上限MB）
+   - 第12回の結果: 読み込み後に待つ対策で、256×384 の描画18工程はページが落ちずに完走した。残りは
+       ・待ち合わせなしだと「GPU待ち」が3秒に達して GPU 側が落ちる（仕上げ、448×640 の描画）→ mapAsync 失敗のエラー
+       ・使用量: 読み込み後に回収を促して0.3秒 576MB / 2回実行後 待ち合わせなし・3秒 1024MB / 待ち合わせあり・回収 800MB / 6回・毎回回収 704MB
+   - 第13回: 待ち合わせあり＋読み込み後の待ち＋工程ごとの回収＋仕上げのタイル分割（448×640 は 2×2）で通しの生成
+       仕上げは1回で GPU バッファを大量に作る（Dawn 計測: 256×384 で合計 621MB → 448×640 なら約1.8GB）ため分割する
+   - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128&pace=0&cap=96&vae=100（pace=0 で待ち合わせなし・cap は余裕の測定の上限MB・vae は仕上げを分割する大きさ）
    ════════════════════════════════════════════════════════════ */
-const KEY = 'lgo_diag_gen_v6';
+const KEY = 'lgo_diag_gen_v7';
 const MB = 1048576;
 const Q = new URLSearchParams(location.search);
 const EP = Q.get('ep') || 'webgpu';
 const ROOT_DIR = 'lgo-localgen';
 const COMP = 'unet';
-const AV = '2026-11-15a';
+const AV = '2026-11-15b';
 const PROMPT = 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', NEG = 'lowres, bad anatomy';
 const TEST_SZ = Q.get('sizes') ? Q.get('sizes').split(',')[0].split('x').map(Number) : null;   // 動作確認用に全部この大きさで
 const SZ = sz => TEST_SZ || sz;
 const STEPS_N = TEST_SZ ? 2 : 18;
 const U = (sz, runs) => ({ unet: { w: SZ(sz)[0], h: SZ(sz)[1], runs, emb: 'synthetic', sample: 'sin', timestep: 500 } });
 const CAP = +(Q.get('cap') || 2400);
-const BASE = 1664;   // 第11回で測った「何も読み込まない状態の余裕」(MB)
-const PACE_ON = { pending: 2, budget: 0.8, min: 2, max: 16 }, PACE_OFF = { bypass: true };
-const HU = (runs, o) => ({ unet: Object.assign(U([256, 384], runs).unet, o.unet || {}), headroom: { when: o.when, capMB: CAP }, pace: o.pace || PACE_OFF, settle: o.settle || { waitMs: 3000, gc: true } });
 const STEPS = [
   { id: 'env', title: '1. 準備（保存済みモデルの確認）',                       run: stepEnv },
   { id: 'v0',  title: '2. 部品の版と Worker の確認',                           run: stepProbe },
-  { id: 'hE',  title: '3. 余裕E: 読み込み後に回収を促して0.3秒',               run: s => stepDiag(s, HU(0, { when: 'load', settle: { waitMs: 300, gc: true } })), reloadBefore: true },
-  { id: 'hF',  title: '4. 余裕F: 2回実行（待ち合わせなし）→3秒待つ',           run: s => stepDiag(s, HU(2, { when: 'run', unet: { after: { waitMs: 3000, gc: false } } })), reloadBefore: true },
-  { id: 'hG',  title: '5. 余裕G: 2回実行（待ち合わせあり）→回収を促す',        run: s => stepDiag(s, HU(2, { when: 'run', pace: PACE_ON, unet: { after: { waitMs: 300, gc: true } } })), reloadBefore: true },
-  { id: 'hH',  title: '6. 余裕H: 6回実行（待ち合わせなし・毎回 回収を促す）',  run: s => stepDiag(s, HU(6, { when: 'run', unet: { gcEachRun: true, after: { waitMs: 300, gc: true } } })), reloadBefore: true },
-  { id: 'g1',  title: `7. 対策版の生成（軽量 ${SZ([256, 384]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([256, 384])), reloadBefore: true },
-  { id: 'g2',  title: `8. 対策版の生成（軽量 ${SZ([448, 640]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([448, 640])), reloadBefore: true },
+  { id: 'g1',  title: `3. 対策版の生成（軽量 ${SZ([256, 384]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([256, 384])), reloadBefore: true },
+  { id: 'g2',  title: `4. 対策版の生成（軽量 ${SZ([448, 640]).join('×')}・${STEPS_N}工程・仕上げは分割）`, run: s => stepGen(s, SZ([448, 640])), reloadBefore: true },
+  { id: 'g3',  title: `5. もう一度（軽量 ${SZ([448, 640]).join('×')}・${STEPS_N}工程）`, run: s => stepGen(s, SZ([448, 640])), reloadBefore: true },
 ];
-let state = load() || { v: 6, inProgress: false, steps: {} };
+let state = load() || { v: 7, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -187,6 +186,7 @@ async function useLocalGen() {
   if (!window.LOCAL_GEN) await loadScript('assets/ai/local-gen.js?v=' + AV);
   if (Q.get('ep')) LOCAL_GEN._configure({ ep: Q.get('ep') });
   if (Q.get('pace') === '0') LOCAL_GEN._configure({ pace: null });
+  if (Q.get('vae')) LOCAL_GEN._configure({ vaeMaxArea: +Q.get('vae') });   // 動作確認用: 小さい画像でも仕上げを分割させる
   await LOCAL_GEN.status();
 }
 // 2. 版と Worker の確認
@@ -216,7 +216,7 @@ async function stepGen(s, size) {
     onProgress: (ph, f) => {
       const k = ph + Math.round(f * 100); if (k === last) return; last = k;
       if (ph === 'unet' && f < 1 && Math.round(f * STEPS_N) % 6) return;   // 記録を間引く
-      mark(s, ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : ''));
+      mark(s, ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : ph === 'vae' && f > 0 && f < 1 ? `仕上げ ${Math.round(f * 100)}%（分割）` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : ''));
     } });
   if (r.width !== w) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);
   mark(s, `完了（全体 ${((performance.now() - t0) / 1000).toFixed(1)}秒・1工程 ${(r.msPerStep / 1000).toFixed(1)}秒）`);
@@ -257,16 +257,11 @@ function verdict() {
   const at = id => !st[id] ? '未実施' : st[id].status === 'crashed' ? `💥（${st[id].mark || '?'}）` : st[id].status === 'error' ? `⚠（${st[id].error}）` : `○ ${st[id].summary || ''}`;
   const lines = STEPS.slice(2).map(d => `${d.title.replace(/^\d+\.\s*/, '')}: ${at(d.id)}`);
   const ok = id => st[id] && st[id].status === 'done', ng = id => st[id] && st[id].status === 'crashed';
-  // 余裕（MB）: 落ちた場合は最後に確保できた量、落ちなかった場合は確保できた量（上限まで届いた・拒否された）
-  const room = id => st[id] && st[id].room != null ? st[id].room : null;
-  const A = BASE, msg = [];
-  const use = (id, label) => { const r = room(id); if (r != null) msg.push(`${label}: 余裕 ${r} MB → 使用量 約 ${A - r} MB`); else if (st[id] && fin(st[id])) msg.push(`${label}: 測定の前に終了（${st[id].mark || st[id].error || '?'}）`); };
-  use('hE', '読み込み後に回収を促して0.3秒（第11回: 直後 1120 / 3秒後 384）');
-  use('hF', '2回実行・待ち合わせなし・3秒後（第11回: 待ち合わせあり 896）');
-  use('hG', '2回実行・待ち合わせあり・回収を促す'); use('hH', '6回実行・毎回 回収を促す');
-  if (ok('g2')) msg.push('448×640 の生成に成功 → アプリでも端末内生成が使えます（⚙設定で「常に使う」を押すと一時停止が解除されます）');
-  else if (ok('g1')) msg.push('256×384 の生成は成功、448×640 は失敗 → 上の数字を見て 448×640 向けの対策を追加します');
-  else if (ng('g1')) msg.push('256×384 の生成も失敗 → 上の数字を見て対策を見直します');
+  const msg = [];
+  if (ok('g2') && ok('g3')) msg.push('448×640 の生成に2回とも成功 → アプリでも端末内生成が使えます（⚙設定で「常に使う」を押すと一時停止が解除されます）');
+  else if (ok('g2') || ok('g3')) msg.push('448×640 は成功と失敗が1回ずつ → まだ不安定。記録を見て余裕を増やします');
+  else if (ok('g1')) msg.push('256×384 は成功、448×640 は失敗 → 記録（どの段階で止まったか・GPU待ち）を見て 448×640 向けに調整します');
+  else msg.push('256×384 も失敗 → 記録（どの段階で止まったか）を見て対策を見直します');
   return lines.join('\n') + (msg.length ? '\n→ ' + msg.join('\n→ ') : '');
 }
 

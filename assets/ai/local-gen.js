@@ -45,9 +45,12 @@
   const ORT_Q = '?v=lgo3';   // 実行部品（LGO3 パッチ入り）を修正したら上げる。古いキャッシュを使わせない
   // 本アプリの部品の版。URL に ?v= を付けて、古い保存データ（Service Worker・ブラウザのキャッシュ）を使わせない。
   //   変えたら index.html / diag-gen.html の local-gen.js?v= と sw.js の ASSETS もそろえる
-  const AV = '2026-11-15e', VQ = '?v=' + AV;
+  const AV = '2026-11-15f', VQ = '?v=' + AV;
   const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
-                epOptions: { storageBufferCacheMode: 'lazyRelease', uniformBufferCacheMode: 'lazyRelease' },
+                // GPU バッファは同じ大きさのものを使い回す（simple）。毎回作って捨てる方式（lazyRelease）だと、
+                //   捨てた分が実際に返るまで時間差があり、iPhone では工程を重ねるうちに上限（2048MB）を超えた。
+                //   使い回しなら2回目以降の実行で新しく作るバッファはほぼ 0（Dawn 計測。出力は同じ）
+                epOptions: { storageBufferCacheMode: 'simple', uniformBufferCacheMode: 'simple' },
                 // GPU への送信の扱い（Worker 内）。bypass: 待ち合わせをせず、待ち時間の記録だけ取る
                 //   待ち合わせをする場合は { pending: 2, budget: 0.8, min: 2, max: 16 }
                 //   （pending: 1回に送る命令の数 / budget: GPU に預ける見積もり時間(秒) / min・max: 預ける送信の数）
@@ -185,7 +188,7 @@
     const t = cfg.tiers[id];
     const epOf = comp => {
       const e0 = (cfg.epFor && cfg.epFor[comp]) || cfg.ep;     // 部品ごとに実行先を変えられる（例: 文章部品だけCPU）
-      // WebGPU: 使い終わったGPUバッファをすぐ返す（既定の使い回しは iPhone で強制終了の一因になった）
+      // WebGPU: GPU バッファの扱いは cfg.epOptions（上の説明を参照）
       return e0 === 'webgpu' && cfg.epOptions ? Object.assign({ name: 'webgpu' }, cfg.epOptions) : e0;
     };
     const ka = cfg.ep === 'webgpu' && cfg.keepAlive !== false ? LocalGenCore.keepAlive(ort, epOf('unet')) : null;   // GPU 接続を保つ

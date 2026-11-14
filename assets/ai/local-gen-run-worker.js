@@ -69,7 +69,7 @@ function installPace(cfg, log) {
       if (svc > PACE.maxSvc) PACE.maxSvc = svc;
       if (wait > PACE.maxWait) {
         PACE.maxWait = wait;
-        if (PACE.log && wait >= 0.5 && wait >= PACE.reported * 1.5) {   // 記録は1.5倍に伸びた時だけ PACE.reported = wait; PACE.log(`GPU待ち 最大 ${wait.toFixed(2)}秒（1回の実行 最大 ${PACE.maxSvc.toFixed(2)}秒）`); }
+        if (PACE.log && wait >= 0.5 && wait >= PACE.reported * 1.5) { PACE.reported = wait; PACE.log(`GPU待ち 最大 ${wait.toFixed(2)}秒（1回の実行 最大 ${PACE.maxSvc.toFixed(2)}秒）`); }
       }
       pump();
     }, () => { PACE.inflight--; pump(); });

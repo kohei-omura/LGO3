@@ -102,6 +102,26 @@ iPhone（Safari のページ上限 約1.9GB）で強制終了していました�
 
 Dawn＋lavapipe（軽量・128×128）で、送信の「待ち」の最大は 9.06秒 → 0.80秒、出力は完全一致、所要時間はほぼ同じ。
 
+### 強制終了の確定した原因: ページのメモリ上限 2048MB（実機テスト第10〜11回の結論）
+Mac のコンソールで iPhone のログを見ると、強制終了のたびに
+`kernel memorystatus: com.apple.WebKit.WebContent exceeded mem limit: ActiveHard 2048 MB (fatal)` が出ていた。
+WebKit は GPU バッファもページ側（WebContent）のメモリに数える（`Device::setOwnerWithIdentity`）。上の「3秒ルール」は、
+ページ側が先に落ちた後、GPU 側の後片付け中に起きた二次的なものだった（クラッシュ記録が1件しか残らなかった理由）。
+
+| 第11回の測定（軽量・256×384。32MB ずつ GPU バッファを確保し、落ちる直前の量＝余裕を記録） | 余裕 | 使用量 |
+| --- | --- | --- |
+| 何も読み込まない状態 | 1664 MB | — |
+| 描画部品の読み込み直後 | 544 MB | 約1120 MB |
+| 読み込み後、命令の完了＋3秒待ってから | 1280 MB | 約384 MB |
+| 2回実行した後（送信の待ち合わせあり・3秒後） | 768 MB | 約896 MB |
+
+- wasm のメモリは 19MB しか使わない（Dawn で計測）。使用量の大半は GPU 側
+- 読み込み中に作られる GPU バッファは合計 1242MB（モデルは 443MB。転送用の一時バッファなど）。JS からは破棄済みでも、
+  実際に返るまで時間差がある。返る前に描画を始めると上限を超える（「描画開始」直後に落ちていた理由）
+- 対策（`local-gen.js` の `settle`、`local-gen-run-worker.js` の `settleGpu` / `gcPoke`）: 部品の読み込み後に、命令の完了を待ち、
+  GC を促して、3秒待つ。描画の工程ごとにも GC を促す。送信の待ち合わせは既定で切った（`pace: { bypass: true }`。
+  待たせた命令の殻が長生きして回収が遅れる疑いがあるため。第12回で比較する）
+
 #### 半精度 WebGPU の再現環境（開発用）
 Chromium 同梱の SwiftShader は半精度(f16)に非対応のため、Node.js ＋ Dawn（npm `webgpu`）＋ Mesa lavapipe
 （`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`）で、実際の軽量・標準モデルを WebGPU 半精度で通し生成できる。

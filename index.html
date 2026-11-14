@@ -472,7 +472,7 @@
     </div>
   </div>
 </div>
-<script src="assets/ai/local-gen.js?v=2026-11-15c"></script>
+<script src="assets/ai/local-gen.js?v=2026-11-15d"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -2874,10 +2874,16 @@ function generateImage(promptData, seed) {
     const tag = (safe.tier || safe.size) ? '（安全設定）' : '';
     setStage('📴 端末内で生成を準備中…' + tag);
     let lastPh = '';
+    // 経過の記録（落ちても残る。diag-gen.html の「アプリでの生成記録」で見られる）
+    const glog = { t: Date.now(), how: navigator.standalone ? 'ホーム画面アプリ' : 'ブラウザ', quality: getImgQuality(), safe: tag ? safe : null, lines: [] };
+    const gl = text => { glog.lines.push(((Date.now() - glog.t) / 1000).toFixed(1) + '秒 ' + text); if(glog.lines.length > 80) glog.lines.splice(10, 1); lsSet('lg_local_log', JSON.stringify(glog)); };
+    gl('生成開始');
     LOCAL_GEN.generate({
       prompt: promptData.prompt, negative: promptData.negative, seed, quality: getImgQuality(), signal: ac.signal,
       tier: safe.tier, size: safe.size,
+      onLog: text => gl('［' + text + '］'),
       onProgress: (ph, f) => {
+        gl(ph + (f > 0 ? ' ' + Math.round(f * 100) + '%' : ''));
         if(ph !== lastPh) { lastPh = ph; localRunMark(ph, safe); }       // どの段階で落ちたかを記録
         setStage((/:load$/.test(ph) ? '📴 端末内: 部品を読み込み中…'
                 : ph === 'unet:run' ? '📴 端末内で描画中… 0%'
@@ -2889,12 +2895,14 @@ function generateImage(promptData, seed) {
     }).then(r => {
       if(_genAbort === ac) _genAbort = null;
       localRunClear(true);
+      gl(`完了 ${r.width}×${r.height}`);
       if(!done) win(URL.createObjectURL(r.blob), '端末内 ' + r.label);
     }).catch(e => {
       if(_genAbort === ac) _genAbort = null;
       localRunClear(false);
       if(done || ac.signal.aborted) return;
       console.warn('[LGO] 端末内生成に失敗:', e);
+      gl('エラー: ' + String(e && e.message || e).slice(0, 300));
       _lastLocalError = e;
       if(!done) savePending(pend);                                       // ネットワーク経路に戻るので回収情報を戻す
       next();

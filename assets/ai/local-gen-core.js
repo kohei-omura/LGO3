@@ -321,21 +321,28 @@
     }
     return best;
   }
-  // latent の一部（小数座標の矩形）を lw×lh に拡大する（双一次補間）
-  function resampleLatent(lat, lw, lh, x0, y0, cw, ch) {
-    const out = new Float32Array(4 * lw * lh), P = lw * lh;
-    for (let y = 0; y < lh; y++) {
-      const fy = Math.min(lh - 1, Math.max(0, y0 + (y + 0.5) * ch / lh - 0.5)), ya = Math.floor(fy), yb = Math.min(lh - 1, ya + 1), ty = fy - ya;
-      for (let x = 0; x < lw; x++) {
-        const fx = Math.min(lw - 1, Math.max(0, x0 + (x + 0.5) * cw / lw - 0.5)), xa = Math.floor(fx), xb = Math.min(lw - 1, xa + 1), tx = fx - xa;
+  // latent（sw×sh）の一部（小数座標の矩形 x0,y0,cw,ch）を dw×dh に引き伸ばす（双一次補間）
+  function resampleLatent(lat, sw, sh, x0, y0, cw, ch, dw, dh) {
+    if (dw == null) { dw = sw; dh = sh; }
+    const out = new Float32Array(4 * dw * dh), P = dw * dh, SP = sw * sh;
+    for (let y = 0; y < dh; y++) {
+      const fy = Math.min(sh - 1, Math.max(0, y0 + (y + 0.5) * ch / dh - 0.5)), ya = Math.floor(fy), yb = Math.min(sh - 1, ya + 1), ty = fy - ya;
+      for (let x = 0; x < dw; x++) {
+        const fx = Math.min(sw - 1, Math.max(0, x0 + (x + 0.5) * cw / dw - 0.5)), xa = Math.floor(fx), xb = Math.min(sw - 1, xa + 1), tx = fx - xa;
         for (let c = 0; c < 4; c++) {
-          const o = c * P;
-          out[o + y * lw + x] = (lat[o + ya * lw + xa] * (1 - tx) + lat[o + ya * lw + xb] * tx) * (1 - ty)
-                              + (lat[o + yb * lw + xa] * (1 - tx) + lat[o + yb * lw + xb] * tx) * ty;
+          const o = c * SP;
+          out[c * P + y * dw + x] = (lat[o + ya * sw + xa] * (1 - tx) + lat[o + ya * sw + xb] * tx) * (1 - ty)
+                                  + (lat[o + yb * sw + xa] * (1 - tx) + lat[o + yb * sw + xb] * tx) * ty;
         }
       }
     }
     return out;
+  }
+  // 1方向のタイルの開始位置: 長さ full を、大きさ t のタイルで、重なり minOv 以上になるよう等間隔に覆う
+  function tilePos(full, t, minOv) {
+    if (full <= t) return [0];
+    const nt = Math.ceil((full - minOv) / (t - minOv));
+    return Array.from({ length: nt }, (_, i) => Math.round(i * (full - t) / (nt - 1)));
   }
 
   // env.begin / env.end があれば生成の前後に呼ぶ（GPU 接続を最後まで保つ「つなぎ」用。下記）
@@ -378,39 +385,91 @@
     prog('text', 1); check();
 
     // ③ UNet で少しずつノイズを取り除く（CFG は1枚ずつ2回推論＝メモリ節約）
-    const sch = makeScheduler(steps);
-    let lat = gaussian(n, o.seed == null ? (Date.now() & 0x7fffffff) : o.seed);
-    const tUnet = Date.now();
-    const denoise = (x, sc, from, ctx, onStep) => withSession(env, 'unet', { batch: 1, h: lh, w: lw }, async s => {
+    //   o.tile（{w,h} px）があり画像がそれより大きい時は「タイル方式」:
+    //     描画部品は常にタイルの大きさ（例 256×384）で動かす。iPhone はページのメモリ上限 2048MB に対し、
+    //     448×640 を1枚で描くと上限ぎりぎり（実機: 成功4・失敗2、すべて描画の1工程目）で、256×384 は一度も落ちていない。
+    //     ① タイルの大きさで全体の構図を描く → ② 目標の大きさへ拡大し、ノイズを載せて後半の工程をやり直す。
+    //     ②は latent を重なりのあるタイルに分けて1枚ずつ推論し、ノイズ予測を重なり部分でなだらかに混ぜる
+    const seed = o.seed == null ? (Date.now() & 0x7fffffff) : o.seed;
+    const T = o.tile && (lw > o.tile.w / 8 || lh > o.tile.h / 8) ? { w: Math.min(lw, o.tile.w / 8), h: Math.min(lh, o.tile.h / 8) } : null;
+    const uw = T ? T.w : lw, uh = T ? T.h : lh, un = 4 * uw * uh;          // 描画部品（セッション）の大きさ
+    // 部品を開いて最初の2回の推論のあとは、少し待ってメモリを返させる（warm）。
+    //   実機の強制終了は3回とも「描画の1工程目」＝中間バッファを初めて作る時で、読み込み直後の一時メモリと重なる
+    let warm = 0;
+    const unet = (fn, pg) => { warm = 2; return withSession(env, 'unet', { batch: 1, h: uh, w: uw }, fn, pg); };
+    const rest = async () => { if (warm > 0 && env.settle) { warm--; await env.settle('tile'); } else if (env.tick) await env.tick(); };
+    // 大きさ xw×xh の latent 全体のノイズ予測（CFG 済み）。xw×xh が部品より大きければタイルに分ける
+    const epsOf = async (s, x, xw, xh, ts, ctx, onTile) => {
+      const one = async sampleArr => {
+        const sample = fromF32(ort, dt, sampleArr, [1, 4, uh, uw]);
+        const eu = toF32((await s.run({ sample, timestep: ts, encoder_hidden_states: ctxUncond })).out_sample.data);
+        await rest();                                // 実行ごとに不要メモリの回収を促す
+        const ec = toF32((await s.run({ sample, timestep: ts, encoder_hidden_states: ctx })).out_sample.data);
+        await rest();
+        const e = new Float32Array(un);
+        for (let k = 0; k < un; k++) e[k] = eu[k] + g * (ec[k] - eu[k]);
+        return e;
+      };
+      if (xw === uw && xh === uh) { const e = await one(x); if (onTile) onTile(1); return e; }
+      const xs = tilePos(xw, uw, 8), ys = tilePos(xh, uh, 8), P = xw * xh, TP = uw * uh, total = xs.length * ys.length;
+      const acc = new Float32Array(4 * P), wsum = new Float32Array(P);
+      let done = 0;
+      for (let iy = 0; iy < ys.length; iy++) for (let ix = 0; ix < xs.length; ix++) {
+        check();
+        const x0 = xs[ix], y0 = ys[iy], tile = new Float32Array(un);
+        for (let c = 0; c < 4; c++) for (let y = 0; y < uh; y++)
+          tile.set(x.subarray(c * P + (y0 + y) * xw + x0, c * P + (y0 + y) * xw + x0 + uw), c * TP + y * uw);
+        const e = await one(tile);
+        const lapL = ix > 0 ? xs[ix - 1] + uw - x0 : 0, lapR = ix < xs.length - 1 ? x0 + uw - xs[ix + 1] : 0;
+        const lapT = iy > 0 ? ys[iy - 1] + uh - y0 : 0, lapB = iy < ys.length - 1 ? y0 + uh - ys[iy + 1] : 0;
+        const wx = ramp(uw, x0, xw, lapL, lapR), wy = ramp(uh, y0, xh, lapT, lapB);
+        for (let y = 0; y < uh; y++) for (let xx = 0; xx < uw; xx++) {
+          const w = wx[xx] * wy[y], q = (y0 + y) * xw + x0 + xx, t = y * uw + xx;
+          for (let c = 0; c < 4; c++) acc[c * P + q] += e[c * TP + t] * w;
+          wsum[q] += w;
+        }
+        if (onTile) onTile(++done / total);
+      }
+      for (let q = 0; q < P; q++) { const w = wsum[q] || 1; for (let c = 0; c < 4; c++) acc[c * P + q] /= w; }
+      return acc;
+    };
+    // 工程 from から最後まで（s は開いている描画部品）。onStep(0〜1)
+    const denoise = async (s, x, xw, xh, sc, from, ctx, onStep) => {
+      const N = sc.timesteps.length - from;
       for (let i = from; i < sc.timesteps.length; i++) {
         check();
         const ts = fromF32(ort, dt, new Float32Array([sc.timesteps[i]]), []);
-        const sample = fromF32(ort, dt, x, [1, 4, lh, lw]);
-        const eu = toF32((await s.run({ sample, timestep: ts, encoder_hidden_states: ctxUncond })).out_sample.data);
-        if (env.tick) await env.tick();              // 実行ごとに不要メモリの回収を促す
-        const ec = toF32((await s.run({ sample, timestep: ts, encoder_hidden_states: ctx })).out_sample.data);
-        const eps = new Float32Array(n);
-        for (let k = 0; k < n; k++) eps[k] = eu[k] + g * (ec[k] - eu[k]);
+        const eps = await epsOf(s, x, xw, xh, ts, ctx, f => onStep((i - from + f) / N));
         x = sc.step(i, eps, x);
-        if (env.tick) await env.tick();
-        onStep((i + 1 - from) / (sc.timesteps.length - from));
       }
       return x;
-    }, onStep.prog);
-    const mainStep = f => prog('unet', f); mainStep.prog = prog;
-    lat = await denoise(lat, sch, 0, ctxCond, mainStep);
+    };
+    const tilesOf = (xw, xh) => tilePos(xw, uw, 8).length * tilePos(xh, uh, 8).length;
+    const tUnet = Date.now();
+    let lat = await unet(async s => {
+      if (!T) return denoise(s, gaussian(n, seed), lw, lh, makeScheduler(steps), 0, ctxCond, f => prog('unet', f));
+      // ① 構図（タイルの大きさ）→ ② 拡大して後半をタイルでやり直す。進み具合は推論回数の割合で出す
+      const hi = Object.assign({ strength: 0.55, steps }, o.hires || {});
+      const hsteps = Math.max(4, hi.steps), hfrom = Math.min(hsteps - 2, Math.max(0, Math.round(hsteps * (1 - hi.strength))));
+      const w1 = steps, w2 = (hsteps - hfrom) * tilesOf(lw, lh), share = w1 / (w1 + w2);
+      const base = await denoise(s, gaussian(un, seed), uw, uh, makeScheduler(steps), 0, ctxCond, f => prog('unet', f * share));
+      const hsch = makeScheduler(hsteps);
+      const start = hsch.addNoise(hfrom, resampleLatent(base, uw, uh, 0, 0, uw, uh, lw, lh), gaussian(n, (seed ^ 0x2545f491) >>> 0));
+      if (env.log) env.log(`タイル方式: 構図 ${uw * 8}×${uh * 8}・${steps}工程 → ${W}×${H} を ${tilesOf(lw, lh)}枚のタイルで ${hsteps - hfrom}工程`);
+      return denoise(s, start, lw, lh, hsch, hfrom, ctxCond, f => prog('unet', share + (1 - share) * f));
+    }, prog);
     const msUnet = Date.now() - tUnet;
     check();
 
     // ④ VAE デコーダで画像へ
     prog('vae', 0);
-    const tiles = planTiles(lw, lh, env.vaeMaxArea, 8), plane = W * H;
-    const decode = async (x0, pg) => {               // latent → RGBA
-      const z = new Float32Array(n);
-      for (let k = 0; k < n; k++) z[k] = x0[k] / VAE_SCALE;
-      const img = tiles ? await decodeTiled(env, ort, dt, z, lw, lh, tiles, pg)
-        : await withSession(env, 'vae_decoder', { batch: 1, h: lh, w: lw }, async s => {
-          const out = await s.run({ latent_sample: fromF32(ort, dt, z, [1, 4, lh, lw]) });
+    const decode = async (x0, xw, xh, pg) => {       // latent（xw×xh）→ RGBA（xw*8 × xh*8）
+      const m = 4 * xw * xh, plane = xw * xh * 64, z = new Float32Array(m);
+      for (let k = 0; k < m; k++) z[k] = x0[k] / VAE_SCALE;
+      const tiles = planTiles(xw, xh, env.vaeMaxArea, 8);
+      const img = tiles ? await decodeTiled(env, ort, dt, z, xw, xh, tiles, pg)
+        : await withSession(env, 'vae_decoder', { batch: 1, h: xh, w: xw }, async s => {
+          const out = await s.run({ latent_sample: fromF32(ort, dt, z, [1, 4, xh, xw]) });
           return toF32(out.sample.data);
         }, pg);
       const px = new Uint8ClampedArray(plane * 4);
@@ -422,12 +481,12 @@
       }
       return px;
     };
-    const rgba = await decode(lat, prog);
+    const rgba = await decode(lat, lw, lh, prog);
     prog('vae', 1);
 
     // ⑤ 顔の描き直し（全身の構図では顔が小さく、そのままでは崩れやすい）
-    //    顔を検出 → その周りの latent を全体サイズまで拡大 → ノイズを載せて後半の工程だけやり直す → 画像にして返す。
-    //    描画・仕上げの部品は同じ大きさで使い回す。失敗しても全体の画像はそのまま返す
+    //    顔を検出 → その周りの latent を描画部品の大きさ（uw×uh）に引き伸ばす → ノイズを載せて後半の工程だけやり直す → 画像にして返す。
+    //    顔は必ず1枚で描く（タイルに分けると、タイルごとに違う顔を描いて二重にぶれる。PC で確認）。失敗しても全体の画像はそのまま返す
     let detail = null;
     if (face) {
       try { detail = await refineFace(); }
@@ -437,27 +496,27 @@
       prog('face', 0);
       const box = face.box || await detectFace(env, rgba, W, H);   // face.box はテスト用（検出を飛ばして枠を指定）
       if (!box) { if (env.log) env.log('顔が見つからないため描き直しなし'); return null; }
-      // 顔の枠を頭全体（髪・あご・首）まで広げ、画像と同じ縦横比の切り出し枠にする
-      const ex = face.expand || 2.2, cwMin = W / (face.maxZoom || 4);
-      let cw = Math.max(box.w * ex, box.h * ex * W / H, cwMin);
-      if (cw > W / (face.minZoom || 2)) { if (env.log) env.log(`顔が十分大きいため描き直しなし（顔の幅 ${Math.round(box.w)}px）`); return null; }
-      const chh = cw * H / W;
+      // 顔の枠を頭全体（髪・あご）まで広げ、描き直す画像（FW×FH）と同じ縦横比の切り出し枠にする
+      const FW = uw * 8, FH = uh * 8, ex = face.expand || 1.8, cwMin = FW / (face.maxZoom || 4);
+      let cw = Math.max(box.w * ex, box.h * ex * FW / FH, cwMin);
+      if (cw > Math.min(W, FW / (face.minZoom || 1.4))) { if (env.log) env.log(`顔が十分大きいため描き直しなし（顔の幅 ${Math.round(box.w)}px）`); return null; }
+      const chh = Math.min(H, cw * FH / FW); cw = chh * FW / FH;
       let x0 = box.x + box.w / 2 - cw / 2, y0 = box.y + box.h * 0.45 - chh / 2;
       x0 = Math.min(Math.max(0, x0), W - cw); y0 = Math.min(Math.max(0, y0), H - chh);
-      if (env.log) env.log(`顔を検出（幅 ${Math.round(box.w)}px・確度 ${(box.score || 1).toFixed(2)}）→ ${(W / cw).toFixed(1)}倍で描き直し`);
-      const up = resampleLatent(lat, lw, lh, x0 / 8, y0 / 8, cw / 8, chh / 8);
+      const z = FW / cw;
+      if (env.log) env.log(`顔を検出（幅 ${Math.round(box.w)}px・確度 ${(box.score || 1).toFixed(2)}）→ ${z.toFixed(1)}倍で描き直し`);
+      const up = resampleLatent(lat, lw, lh, x0 / 8, y0 / 8, cw / 8, chh / 8, uw, uh);
       const fsteps = Math.max(4, face.steps || steps), from = Math.min(fsteps - 2, Math.max(0, Math.round(fsteps * (1 - (face.strength || 0.5)))));
       const fsch = makeScheduler(fsteps);
-      const noisy = fsch.addNoise(from, up, gaussian(n, ((o.seed == null ? 1 : o.seed) ^ 0x5bd1e995) >>> 0));
+      const noisy = fsch.addNoise(from, up, gaussian(un, (seed ^ 0x5bd1e995) >>> 0));
       const fprog = (ph, f) => prog('face:' + ph, f);
-      const fstep = f => prog('face', 0.05 + 0.75 * f); fstep.prog = fprog;
-      const flat = await denoise(noisy, fsch, from, ctxFace, fstep);
-      const frgba = await decode(flat, (ph, f) => (ph === 'vae' ? prog('face', 0.8 + 0.2 * f) : fprog(ph, f)));
+      const flat = await unet(s => denoise(s, noisy, uw, uh, fsch, from, ctxFace, f => prog('face', 0.05 + 0.75 * f)), fprog);
+      const frgba = await decode(flat, uw, uh, (ph, f) => (ph === 'vae' ? prog('face', 0.8 + 0.2 * f) : fprog(ph, f)));
       // 描き直した結果を確かめる: 顔が元と同じ位置・大きさにあること。ずれていたら体とつながらないので使わない
       if (!face.box) {
-        const z = W / cw, want = { cx: (box.x + box.w / 2 - x0) * z, cy: (box.y + box.h / 2 - y0) * z, w: box.w * z };
-        const got = await detectFace(env, frgba, W, H);
-        const okPos = got && Math.abs(got.x + got.w / 2 - want.cx) < W * 0.2 && Math.abs(got.y + got.h / 2 - want.cy) < H * 0.2;
+        const want = { cx: (box.x + box.w / 2 - x0) * z, cy: (box.y + box.h / 2 - y0) * z, w: box.w * z };
+        const got = await detectFace(env, frgba, FW, FH);
+        const okPos = got && Math.abs(got.x + got.w / 2 - want.cx) < FW * 0.2 && Math.abs(got.y + got.h / 2 - want.cy) < FH * 0.2;
         const ratio = got ? got.w / want.w : 0;
         if (!okPos || ratio < 0.6 || ratio > 1.6) {
           if (env.log) env.log(got ? `描き直した顔の位置・大きさが元と合わないため使わない（大きさ ${ratio.toFixed(2)}倍）` : '描き直した画像に顔が見つからないため使わない');
@@ -467,7 +526,8 @@
         if (env.log) env.log(`描き直しを確認（大きさ ${ratio.toFixed(2)}倍）`);
       }
       prog('face', 1);
-      return { rgba: frgba, width: W, height: H, rect: { x: x0, y: y0, w: cw, h: chh }, box };
+      // rgba は FW×FH。rect は全体の画像（W×H）上の位置
+      return { rgba: frgba, width: FW, height: FH, rect: { x: x0, y: y0, w: cw, h: chh }, box };
     }
     return { rgba, width: W, height: H, steps, ms: Date.now() - t0, msPerStep: Math.round(msUnet / steps),
              truncated: pos.truncated, tokensUsed: pos.used, detail };
@@ -491,9 +551,9 @@
     };
   }
 
-  const VERSION = '2026-11-16b';
+  const VERSION = '2026-11-16c';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
-                _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles, _detectFace: detectFace };   // _ 付きは診断用
+                _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles, _detectFace: detectFace, _tilePos: tilePos };   // _ 付きは診断用
   root.LocalGenCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

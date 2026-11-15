@@ -45,7 +45,7 @@
   const ORT_Q = '?v=lgo3';   // 実行部品（LGO3 パッチ入り）を修正したら上げる。古いキャッシュを使わせない
   // 本アプリの部品の版。URL に ?v= を付けて、古い保存データ（Service Worker・ブラウザのキャッシュ）を使わせない。
   //   変えたら index.html / diag-gen.html の local-gen.js?v= と sw.js の ASSETS もそろえる
-  const AV = '2026-11-16b', VQ = '?v=' + AV;
+  const AV = '2026-11-16c', VQ = '?v=' + AV;
   const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
                 // GPU バッファは同じ大きさのものを使い回す（simple）。毎回作って捨てる方式（lazyRelease）だと、
                 //   捨てた分が実際に返るまで時間差があり、iPhone では工程を重ねるうちに上限（2048MB）を超えた。
@@ -63,12 +63,19 @@
                 settle: { waitMs: 3000, small: 400, gc: true },
                 // 仕上げ（VAE）を分割する大きさ: 潜在表現の画素数がこれを超えたらタイルに分ける（1536 = 256×384 相当）
                 vaeMaxArea: 1536,
+                // タイル方式（計算部品の説明を参照）: 描画部品を常に tile の大きさで動かし、大きい画像は
+                //   ①tile の大きさで構図 → ②拡大して後半の工程をタイルでやり直す（hires）。メモリは 256×384 相当で済む。
+                //   ただし PC で確かめた画質が不十分なため既定では使わない（diag-gen.html?tile=1 で試せる）:
+                //     全身 … 構図を 256×384 で作ると人物が幼い体つきになりやすい / 上半身 … 顔が大写しになり、タイルごとに別の顔を描き込んで崩れる
+                //   hires.strength: 0.55 だと描き込みが強すぎて体や服が別の物に化けることがあった → 0.45
+                tile: { w: 256, h: 384 }, hires: { strength: 0.45, steps: 20 }, tileOn: false,
                 // 顔の描き直し: 顔を検出し、その周りを全体サイズまで拡大して後半の工程だけやり直す（generate の opts.face で有効）
                 //   strength: やり直す割合 / steps: 描き直し用の工程数（実際に回るのは steps×strength）
                 //   expand: 顔の枠を何倍に広げて切り出すか / maxZoom・minZoom: 拡大率の上限と、これ未満なら描き直さない下限
                 //   実機で、顔が大きめの画像を広い範囲で描き直して体とつながらなくなった疑いがあったため、
                 //   顔が小さい時（2倍以上に拡大できる時）だけ描き直し、結果の顔の位置・大きさも確かめる（計算部品側）
                 face: { strength: 0.5, steps: 16, expand: 2.2, maxZoom: 4, minZoom: 2 },
+                faceTiled: { strength: 0.5, steps: 16, expand: 1.8, maxZoom: 4, minZoom: 1.4 },   // タイル方式の時（顔は tile の大きさ1枚で描く）
                 faceModel: 'models/yunet/face_detection_yunet_2023mar.onnx',
                 preferLight: /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
                 useWorker: true,      // Worker で実行（重みを1個ずつ読む・終わったら Worker ごと捨てる）。不可なら従来どおり
@@ -276,7 +283,8 @@
         ep: cfg.ep, epOptions: cfg.epOptions, epFor: cfg.epFor, stream: cfg.stream, uploadMode: cfg.uploadMode, keepAlive: cfg.keepAlive, pace: cfg.pace, settle: cfg.settle, vaeMaxArea: cfg.vaeMaxArea, debug: !!o.onLog,
         faceModelUrl: o.face ? abs(cfg.faceModel) : null,
         opts: { prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance, width: size.w, height: size.h,
-                face: o.face ? Object.assign({}, cfg.face, o.face) : null } }, extra || {}));
+                tile: cfg.tileOn ? cfg.tile : null, hires: cfg.hires,
+                face: o.face ? Object.assign({}, cfg.tileOn ? cfg.faceTiled : cfg.face, o.face) : null } }, extra || {}));
     });
   }
   // 診断用: 部品を選んで Worker で動かす（diag-gen.html）
@@ -305,7 +313,7 @@
     if (!useW) await loadOrt();
     const run = size => useW ? runInWorker(id, o, size, steps) : LocalGenCore.generate(makeEnv(id), {
       prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance,
-      width: size.w, height: size.h, signal: o.signal, onProgress: o.onProgress });
+      width: size.w, height: size.h, tile: cfg.tileOn ? cfg.tile : null, hires: cfg.hires, signal: o.signal, onProgress: o.onProgress });
     let r;
     try { r = await run(plan); }
     catch (e) {
@@ -330,7 +338,7 @@
 
   window.LOCAL_GEN = {
     supported, status, download, abortDownload, remove, generate, warmup, workerProbe, diagRun, detectFace, version: AV,
-    isReady: () => !!readyTier(), readyTier, plans: PLANS,
+    isReady: () => !!readyTier(), readyTier, plans: PLANS, tiled: () => !!cfg.tileOn,
     _configure: o => { Object.assign(cfg, o); _support = null; _probe = null; _ready = {}; for (const k of Object.keys(cfg.tiers)) _ready[k] = false; },
   };
 })();

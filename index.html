@@ -400,7 +400,7 @@
     </div>
     <button id="localFaceBtn" class="quality-btn" onclick="setLocalFace(!getLocalFace())" style="width:100%;margin:6px 0">🙂 顔の描き直し：ON</button>
     <div class="settings-hint" style="margin-bottom:8px">
-      🙂 端末内で全身を描いたあと、顔を検出して<strong style="color:var(--gold)">顔の部分だけを拡大して描き直し</strong>ます（全身の構図では顔が小さく、崩れやすいため）。生成時間が1分ほど延びます。
+      🙂 端末内で描いたあと、顔が小さく写っている時は、顔を検出して<strong style="color:var(--gold)">顔の部分だけを拡大して描き直し</strong>ます（小さい顔は崩れやすいため）。
     </div>
     <div class="local-box">
       <div class="local-status" id="localStatus">確認中…</div>
@@ -476,7 +476,7 @@
     </div>
   </div>
 </div>
-<script src="assets/ai/local-gen.js?v=2026-11-16b"></script>
+<script src="assets/ai/local-gen.js?v=2026-11-16c"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -2995,10 +2995,12 @@ function generateImage(promptData, seed) {
     const gl = text => { glog.lines.push(((Date.now() - glog.t) / 1000).toFixed(1) + '秒 ' + text); if(glog.lines.length > 80) glog.lines.splice(10, 1); lsSet('lg_local_log', JSON.stringify(glog)); };
     { const prev = lsGet('lg_local_log'); if(prev) lsSet('lg_local_log_prev', prev); }   // 1つ前の記録も残す（続けて生成しても消えない）
     gl('生成開始');
-    // 顔の描き直しを使う時だけ全身の構図にする（使わない時は顔が崩れないよう上半身）
     const useFace = !tag && getLocalFace() && !!promptData.localFacePrompt;
-    const lp = (useFace ? promptData.localPrompt : promptData.localPromptNoFace || promptData.localPrompt) || promptData.prompt;
-    gl(`指示文: ${useFace ? '全身（顔の描き直しあり）' : promptData.localPromptNoFace ? '上半身（顔の描き直しなし' + (tag ? '・安全設定' : !getLocalFace() ? '・設定OFF' : '') + '）' : '通常（端末内用なし）'} / ${String(lp).slice(0, 70)}…`);
+    // 全身の構図は、構図を大きい画像（448×640）で作れる時だけ。タイル方式（iPhone / iPad。構図は 256×384 で作る）では
+    //   全身だと人物が小さく幼い体つきになりやすく、構図も安定しない（PC で確認）ため上半身にする
+    const fullBody = useFace && !(LOCAL_GEN.tiled && LOCAL_GEN.tiled());
+    const lp = (fullBody ? promptData.localPrompt : promptData.localPromptNoFace || promptData.localPrompt) || promptData.prompt;
+    gl(`指示文: ${!promptData.localPromptNoFace ? '通常（端末内用なし）' : (fullBody ? '全身' : '上半身') + '・顔の描き直し' + (useFace ? 'あり' : 'なし' + (tag ? '（安全設定）' : !getLocalFace() ? '（設定OFF）' : ''))} / ${String(lp).slice(0, 70)}…`);
     // AI超解像が溜めた GPU メモリを先に返す（返るまで少し待つ）
     const freed = AI_SR.release();
     if(freed > 0) gl(`AI超解像のGPUメモリを解放 ${Math.round(freed / 1048576)}MB`);
@@ -3009,7 +3011,7 @@ function generateImage(promptData, seed) {
     if(waitMs > 0) setStage('📴 端末内: メモリの解放を待っています…' + tag);
     new Promise(res => setTimeout(res, Math.max(0, waitMs))).then(() => { if(ac.signal.aborted) { const e = new Error('中断しました'); e.name = 'AbortError'; throw e; } }).then(() => LOCAL_GEN.generate({
       prompt: lp,
-      negative: (useFace ? promptData.localNegative : promptData.localNegativeNoFace || promptData.localNegative) || promptData.negative,
+      negative: (fullBody ? promptData.localNegative : promptData.localNegativeNoFace || promptData.localNegative) || promptData.negative,
       seed, quality: getImgQuality(), signal: ac.signal,
       tier: safe.tier, size: safe.size,
       face: useFace ? { prompt: promptData.localFacePrompt } : null,

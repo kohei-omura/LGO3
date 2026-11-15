@@ -14,7 +14,7 @@
      ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name } / { type:'log', text }（debug 時）
    ════════════════════════════════════════════════════════════ */
 'use strict';
-const WORKER_VERSION = '2026-11-16a';
+const WORKER_VERSION = '2026-11-16b';
 
 async function probe(m) {
   const out = { type: 'probe', gpu: !!(self.navigator && navigator.gpu), adapter: false, f16: false,

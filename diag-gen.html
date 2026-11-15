@@ -113,7 +113,7 @@ const Q = new URLSearchParams(location.search);
 const EP = Q.get('ep') || 'webgpu';
 const ROOT_DIR = 'lgo-localgen';
 const COMP = 'unet';
-const AV = '2026-11-16a';
+const AV = '2026-11-16b';
 const PROMPT = 'a beautiful young woman, long black hair, gentle smile, soft light, portrait', NEG = 'lowres, bad anatomy';
 const TEST_SZ = Q.get('sizes') ? Q.get('sizes').split(',')[0].split('x').map(Number) : null;   // 動作確認用に全部この大きさで
 const SZ = sz => TEST_SZ || sz;
@@ -308,9 +308,13 @@ function render() {
 }
 // アプリ本体（index.html）が残した直近の生成記録。落ちた場合も最後の段階まで残る
 function appLogText() {
-  let g = null; try { g = JSON.parse(localStorage.getItem('lg_local_log')); } catch (e) {}
-  if (!g || !g.lines) return '';
-  return `【アプリでの生成記録】 ${new Date(g.t).toLocaleString('ja-JP')} / ${g.how} / 画質 ${g.quality}${g.safe ? ' / 安全設定 ' + JSON.stringify(g.safe) : ''}\n` + g.lines.join('\n');
+  const one = (key, title) => {
+    let g = null; try { g = JSON.parse(localStorage.getItem(key)); } catch (e) {}
+    if (!g || !g.lines) return '';
+    return `【${title}】 ${new Date(g.t).toLocaleString('ja-JP')} / ${g.how} / 画質 ${g.quality}${g.safe ? ' / 安全設定 ' + JSON.stringify(g.safe) : ''}\n` + g.lines.join('\n');
+  };
+  // 直近と、その1つ前（続けて生成した時に前の記録が消えないように）
+  return [one('lg_local_log', 'アプリでの生成記録'), one('lg_local_log_prev', 'アプリでの生成記録（1つ前）')].filter(Boolean).join('\n\n');
 }
 function renderAppLog() {
   const t = appLogText();

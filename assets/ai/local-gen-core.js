@@ -440,7 +440,7 @@
       // 顔の枠を頭全体（髪・あご・首）まで広げ、画像と同じ縦横比の切り出し枠にする
       const ex = face.expand || 2.2, cwMin = W / (face.maxZoom || 4);
       let cw = Math.max(box.w * ex, box.h * ex * W / H, cwMin);
-      if (cw > W / (face.minZoom || 1.5)) { if (env.log) env.log(`顔が十分大きいため描き直しなし（顔の幅 ${Math.round(box.w)}px）`); return null; }
+      if (cw > W / (face.minZoom || 2)) { if (env.log) env.log(`顔が十分大きいため描き直しなし（顔の幅 ${Math.round(box.w)}px）`); return null; }
       const chh = cw * H / W;
       let x0 = box.x + box.w / 2 - cw / 2, y0 = box.y + box.h * 0.45 - chh / 2;
       x0 = Math.min(Math.max(0, x0), W - cw); y0 = Math.min(Math.max(0, y0), H - chh);
@@ -453,6 +453,19 @@
       const fstep = f => prog('face', 0.05 + 0.75 * f); fstep.prog = fprog;
       const flat = await denoise(noisy, fsch, from, ctxFace, fstep);
       const frgba = await decode(flat, (ph, f) => (ph === 'vae' ? prog('face', 0.8 + 0.2 * f) : fprog(ph, f)));
+      // 描き直した結果を確かめる: 顔が元と同じ位置・大きさにあること。ずれていたら体とつながらないので使わない
+      if (!face.box) {
+        const z = W / cw, want = { cx: (box.x + box.w / 2 - x0) * z, cy: (box.y + box.h / 2 - y0) * z, w: box.w * z };
+        const got = await detectFace(env, frgba, W, H);
+        const okPos = got && Math.abs(got.x + got.w / 2 - want.cx) < W * 0.2 && Math.abs(got.y + got.h / 2 - want.cy) < H * 0.2;
+        const ratio = got ? got.w / want.w : 0;
+        if (!okPos || ratio < 0.6 || ratio > 1.6) {
+          if (env.log) env.log(got ? `描き直した顔の位置・大きさが元と合わないため使わない（大きさ ${ratio.toFixed(2)}倍）` : '描き直した画像に顔が見つからないため使わない');
+          prog('face', 1);
+          return null;
+        }
+        if (env.log) env.log(`描き直しを確認（大きさ ${ratio.toFixed(2)}倍）`);
+      }
       prog('face', 1);
       return { rgba: frgba, width: W, height: H, rect: { x: x0, y: y0, w: cw, h: chh }, box };
     }
@@ -478,7 +491,7 @@
     };
   }
 
-  const VERSION = '2026-11-16a';
+  const VERSION = '2026-11-16b';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
                 _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles, _detectFace: detectFace };   // _ 付きは診断用
   root.LocalGenCore = api;

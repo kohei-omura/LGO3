@@ -45,7 +45,7 @@
   const ORT_Q = '?v=lgo3';   // 実行部品（LGO3 パッチ入り）を修正したら上げる。古いキャッシュを使わせない
   // 本アプリの部品の版。URL に ?v= を付けて、古い保存データ（Service Worker・ブラウザのキャッシュ）を使わせない。
   //   変えたら index.html / diag-gen.html の local-gen.js?v= と sw.js の ASSETS もそろえる
-  const AV = '2026-11-16a', VQ = '?v=' + AV;
+  const AV = '2026-11-16b', VQ = '?v=' + AV;
   const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
                 // GPU バッファは同じ大きさのものを使い回す（simple）。毎回作って捨てる方式（lazyRelease）だと、
                 //   捨てた分が実際に返るまで時間差があり、iPhone では工程を重ねるうちに上限（2048MB）を超えた。
@@ -66,7 +66,9 @@
                 // 顔の描き直し: 顔を検出し、その周りを全体サイズまで拡大して後半の工程だけやり直す（generate の opts.face で有効）
                 //   strength: やり直す割合 / steps: 描き直し用の工程数（実際に回るのは steps×strength）
                 //   expand: 顔の枠を何倍に広げて切り出すか / maxZoom・minZoom: 拡大率の上限と、これ未満なら描き直さない下限
-                face: { strength: 0.5, steps: 16, expand: 2.2, maxZoom: 4, minZoom: 1.5 },
+                //   実機で、顔が大きめの画像を広い範囲で描き直して体とつながらなくなった疑いがあったため、
+                //   顔が小さい時（2倍以上に拡大できる時）だけ描き直し、結果の顔の位置・大きさも確かめる（計算部品側）
+                face: { strength: 0.5, steps: 16, expand: 2.2, maxZoom: 4, minZoom: 2 },
                 faceModel: 'models/yunet/face_detection_yunet_2023mar.onnx',
                 preferLight: /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
                 useWorker: true,      // Worker で実行（重みを1個ずつ読む・終わったら Worker ごと捨てる）。不可なら従来どおり

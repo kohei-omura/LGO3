@@ -476,7 +476,7 @@
     </div>
   </div>
 </div>
-<script src="assets/ai/local-gen.js?v=2026-11-16a"></script>
+<script src="assets/ai/local-gen.js?v=2026-11-16b"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -2297,8 +2297,24 @@ const AI_SR = (() => {
       return (await get(key, true)).upscaleImageData(imageData, opt);
     }
   }
+  // 確保した GPU メモリを手放す。tfjs は使い終わったバッファを再利用のため溜めたままにするので、
+  //   放っておくと同じ画面での次の端末内生成で、その分だけページのメモリ上限（iPhone は 2048MB）に近づく。
+  //   モデルは次に使う時に IndexedDB から読み直す。戻り値は解放したバイト数（分からなければ 0）
+  function release() {
+    let freed = 0;
+    try {
+      for(const k of Object.keys(ups)) { try { ups[k].dispose(); } catch(e){} delete ups[k]; }
+      if(typeof tf !== 'undefined' && tf.getBackend && tf.getBackend()) {
+        const b = tf.backend();
+        for(const m of [b.bufferManager, b.textureManager]) {
+          if(m && typeof m.dispose === 'function') { freed += m.numBytesAllocated || 0; m.dispose(); }
+        }
+      }
+    } catch(e) { console.warn('[LGO] AI超解像のメモリ解放に失敗:', e); }
+    return freed;
+  }
   return {
-    run,
+    run, release,
     available: () => !!(navigator.gpu || window.WebGL2RenderingContext),
     backend: () => backend,
   };
@@ -2457,6 +2473,7 @@ function _genOneVariation(seed, pd, onOk, onErr) {
   // 📴 端末内（常に使う設定、またはオフライン時）
   const mode = getLocalMode();
   if(localAvailable() && pd.mode !== 'img2img' && mode !== 'off' && (mode === 'always' || !navigator.onLine)) {
+    AI_SR.release();
     LOCAL_GEN.generate({ prompt: pd.localPromptNoFace || pd.localPrompt || pd.prompt, negative: pd.localNegativeNoFace || pd.localNegative || pd.negative, seed, quality: getImgQuality(), signal: _varAbort && _varAbort.signal })
       .then(r => onOk(URL.createObjectURL(r.blob), true, '端末内 ' + r.label))
       .catch(() => { if(!(_varAbort && _varAbort.signal.aborted)) network(); });
@@ -2811,6 +2828,8 @@ async function runAiEnhance(off, plan, ctx) {
     clearTimeout(to);
     lsSet(SR_RUN_KEY, null);
     if(_srAbort === ac) _srAbort = null;
+    if(!_srAbort) AI_SR.release();                // 次の生成に備えて GPU メモリを返す（別の超解像が走っていなければ）
+    _heavyEndAt = Date.now();
     if(ctx.token === GEN_TOKEN) _renderQualityBadge();
   }
 }
@@ -2966,6 +2985,7 @@ function generateImage(promptData, seed) {
     const ac = new AbortController(); _genAbort = ac;
     clearPending();                                                      // 端末内の結果はサーバーに無いので「回収」対象にしない
     const safe = localSafeOptions();                                     // 前回強制終了していたら軽い設定で
+    _localRunCount++;
     localRunMark('start', safe);
     const tag = (safe.tier || safe.size) ? '（安全設定）' : '';
     setStage('📴 端末内で生成を準備中…' + tag);
@@ -2973,11 +2993,22 @@ function generateImage(promptData, seed) {
     // 経過の記録（落ちても残る。diag-gen.html の「アプリでの生成記録」で見られる）
     const glog = { t: Date.now(), how: navigator.standalone ? 'ホーム画面アプリ' : 'ブラウザ', quality: getImgQuality(), safe: tag ? safe : null, lines: [] };
     const gl = text => { glog.lines.push(((Date.now() - glog.t) / 1000).toFixed(1) + '秒 ' + text); if(glog.lines.length > 80) glog.lines.splice(10, 1); lsSet('lg_local_log', JSON.stringify(glog)); };
+    { const prev = lsGet('lg_local_log'); if(prev) lsSet('lg_local_log_prev', prev); }   // 1つ前の記録も残す（続けて生成しても消えない）
     gl('生成開始');
     // 顔の描き直しを使う時だけ全身の構図にする（使わない時は顔が崩れないよう上半身）
     const useFace = !tag && getLocalFace() && !!promptData.localFacePrompt;
-    LOCAL_GEN.generate({
-      prompt: (useFace ? promptData.localPrompt : promptData.localPromptNoFace || promptData.localPrompt) || promptData.prompt,
+    const lp = (useFace ? promptData.localPrompt : promptData.localPromptNoFace || promptData.localPrompt) || promptData.prompt;
+    gl(`指示文: ${useFace ? '全身（顔の描き直しあり）' : promptData.localPromptNoFace ? '上半身（顔の描き直しなし' + (tag ? '・安全設定' : !getLocalFace() ? '・設定OFF' : '') + '）' : '通常（端末内用なし）'} / ${String(lp).slice(0, 70)}…`);
+    // AI超解像が溜めた GPU メモリを先に返す（返るまで少し待つ）
+    const freed = AI_SR.release();
+    if(freed > 0) gl(`AI超解像のGPUメモリを解放 ${Math.round(freed / 1048576)}MB`);
+    // 続けて生成する時は、前の処理のメモリが返るのを待つ（最大 8 秒。開いて最初の生成は待たない）
+    const since = _heavyEndAt ? Date.now() - _heavyEndAt : Infinity;
+    const waitMs = _localRunCount > 1 || _heavyEndAt ? Math.max(freed > 0 ? 1500 : 0, Math.min(LOCAL_REPEAT_WAIT_MS, LOCAL_REPEAT_WAIT_MS - since)) : 0;
+    gl(`この画面での生成 ${_localRunCount}回目` + (_heavyEndAt ? `・前の処理の終了から ${Math.round(since / 1000)}秒` : '') + (waitMs > 0 ? `・${(waitMs / 1000).toFixed(1)}秒待ってから開始` : ''));
+    if(waitMs > 0) setStage('📴 端末内: メモリの解放を待っています…' + tag);
+    new Promise(res => setTimeout(res, Math.max(0, waitMs))).then(() => { if(ac.signal.aborted) { const e = new Error('中断しました'); e.name = 'AbortError'; throw e; } }).then(() => LOCAL_GEN.generate({
+      prompt: lp,
       negative: (useFace ? promptData.localNegative : promptData.localNegativeNoFace || promptData.localNegative) || promptData.negative,
       seed, quality: getImgQuality(), signal: ac.signal,
       tier: safe.tier, size: safe.size,
@@ -2995,14 +3026,14 @@ function generateImage(promptData, seed) {
                 : ph === 'unet' ? `📴 端末内で描画中… ${Math.round(f * 100)}%`
                 :                 '📴 端末内: 仕上げ中…') + tag);
       },
-    }).then(r => {
+    })).then(r => {
       if(_genAbort === ac) _genAbort = null;
-      localRunClear(true);
+      localRunClear(true); _heavyEndAt = Date.now();
       gl(`完了 ${r.width}×${r.height}` + (r.detail ? '・顔の描き直しあり' : ''));
       if(!done) { const u = URL.createObjectURL(r.blob); setFaceDetail(u, r.detail); win(u, '端末内 ' + r.label); }
     }).catch(e => {
       if(_genAbort === ac) _genAbort = null;
-      localRunClear(false);
+      localRunClear(false); _heavyEndAt = Date.now();
       if(done || ac.signal.aborted) return;
       console.warn('[LGO] 端末内生成に失敗:', e);
       gl('エラー: ' + String(e && e.message || e).slice(0, 300));
@@ -3545,7 +3576,12 @@ const lsGet = k => { try { return localStorage.getItem(k); } catch(e) { return n
 const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch(e){} };
 function localCrashCount() { return parseInt(lsGet(LOCAL_CRASH_KEY) || '0', 10) || 0; }
 function localCrashPaused() { return localCrashCount() >= 2; }
-function localRunMark(phase, safe) { lsSet(LOCAL_RUN_KEY, JSON.stringify({ t: Date.now(), phase, safe: !!(safe.tier || safe.size) })); }
+// この画面を開いてから端末内生成を始めた回数と、直近の重い処理（端末内生成・AI超解像）が終わった時刻。
+//   実機で「開き直した直後の1回目は完走・同じ画面での2回目は描画の1工程目で強制終了」があった。
+//   前の処理が使ったメモリは返るまでに時間差があるため、続けて生成する時は少し待ってから始める
+let _localRunCount = 0, _heavyEndAt = 0;
+const LOCAL_REPEAT_WAIT_MS = 8000;
+function localRunMark(phase, safe) { lsSet(LOCAL_RUN_KEY, JSON.stringify({ t: Date.now(), phase, safe: !!(safe.tier || safe.size), repeat: _localRunCount > 1 })); }
 function localRunClear(ok) { lsSet(LOCAL_RUN_KEY, null); if(ok) lsSet(LOCAL_CRASH_KEY, null); }
 function localSafeOptions() {
   if(localCrashCount() < 1) return {};
@@ -3562,6 +3598,9 @@ function setLocalFace(on) {
 const LOCAL_PHASE_LABEL = { start: '準備', 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章の解析', text: '文章の解析',
   'unet:load': '描画部品の読込', 'unet:run': '描画（1工程目）', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ', vae: '仕上げ', face: '顔の描き直し' };
 function checkLocalCrash() {
+  // アプリの版が変わったら安全設定を解く（対策を入れた新しい版は、通常の設定から試す）
+  const ver = (typeof LOCAL_GEN !== 'undefined' && LOCAL_GEN.version) || '';
+  if(ver && lsGet('lg_local_appver') !== ver) { lsSet('lg_local_appver', ver); lsSet(LOCAL_CRASH_KEY, null); lsSet(LOCAL_RUN_KEY, null); }
   const raw = lsGet(LOCAL_RUN_KEY);
   if(raw) {
     lsSet(LOCAL_RUN_KEY, null);
@@ -3571,6 +3610,10 @@ function checkLocalCrash() {
       setLocalFace(false);
       console.warn('[LGO] 顔の描き直し中に強制終了を検知:', r);
       showToast('前回、顔の描き直し中に強制終了したため、顔の描き直しをOFFにしました（設定で戻せます）');
+    } else if(Date.now() - (r.t || 0) < 3 * 3600e3 && r.repeat && !r.safe) {
+      // 同じ画面での2回目以降に落ちた → 開き直した直後なら通る見込みなので、軽い設定には落とさない
+      console.warn('[LGO] 続けての端末内生成で強制終了を検知:', r);
+      showToast('前回、続けて生成した時に強制終了しました。アプリを開き直した直後の生成は安定します');
     } else if(Date.now() - (r.t || 0) < 3 * 3600e3) {
       const n = localCrashCount() + 1;
       lsSet(LOCAL_CRASH_KEY, String(n));

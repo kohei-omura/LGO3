@@ -398,6 +398,10 @@
       <button class="quality-btn" data-l="always" onclick="setLocalMode('always', true); refreshLocalStatus()">📴 常に使う<small>APIを使わない</small></button>
       <button class="quality-btn" data-l="off" onclick="setLocalMode('off', true); refreshLocalStatus()">OFF<small>使わない</small></button>
     </div>
+    <button id="localFaceBtn" class="quality-btn" onclick="setLocalFace(!getLocalFace())" style="width:100%;margin:6px 0">🙂 顔の描き直し：ON</button>
+    <div class="settings-hint" style="margin-bottom:8px">
+      🙂 端末内で全身を描いたあと、顔を検出して<strong style="color:var(--gold)">顔の部分だけを拡大して描き直し</strong>ます（全身の構図では顔が小さく、崩れやすいため）。生成時間が1分ほど延びます。
+    </div>
     <div class="local-box">
       <div class="local-status" id="localStatus">確認中…</div>
       <div class="local-bar" id="localBar"><i></i></div>
@@ -472,7 +476,7 @@
     </div>
   </div>
 </div>
-<script src="assets/ai/local-gen.js?v=2026-11-15f"></script>
+<script src="assets/ai/local-gen.js?v=2026-11-16a"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -1516,20 +1520,35 @@ function buildPrompt(div) {
 
   // 端末内生成用の指示文。端末内モデルは先頭 75 語分（CLIP の上限）しか読まないため、
   //   通常の並びだと末尾の「ピント・肌の質感」などの写実指定が毎回切り捨てられていた（実測 115 語分）。
-  //   画質の指定を先頭に置き、飾り（九星の色・数秘など）は入りきる分だけにする。
-  //   年齢と構図（上半身＝顔を大きく）も先頭で指定する。指定が弱いと全身が小さく写り、顔が崩れ、幼く見えた（実機）。
-  const localHead = style === 'anime'
-    ? 'masterpiece, best quality, anime illustration, 1girl, young woman, upper body, beautiful detailed face, beautiful detailed eyes, fully clothed, modest high neckline'
-    : 'RAW photo, upper body portrait of a beautiful young japanese woman in her twenties, face focus, detailed face, natural skin texture, sharp focus, soft natural light, fully clothed, modest high neckline';
-  const localChar = [hair, style === 'anime' ? eyes : 'natural makeup expressive eyes', pose, outfit].join(', ');
-  const localPrompt = [
-    localHead, custom, localChar, elemScene, tarotAura, moonVisual,
-    rokuyoVibe, pillarAccent, kyuseiAccent, numEffect,
-  ].map(x => String(x || '').trim().replace(/,+$/, '')).filter(Boolean).join(', ');
+  //   構図・年齢・画質の指定を先頭に置き、飾り（九星の色・数秘など）は入りきる分だけにする。
+  //   全身版: 頭から足先まで・正面向き・目を開ける。顔は小さく写るので、あとで顔だけ描き直す（localFacePrompt）。
+  //   上半身版（NoFace）: 顔の描き直しを使わない時（OFF・安全設定）用。全身だと顔が崩れるため顔を大きく写す。
+  const LOCAL_POSE = ['gentle smile', 'serene expression', 'warm smile', 'graceful stance', 'elegant upright posture'];
+  const localPose = seededPick(LOCAL_POSE, rndSeed, 3);                    // 目を閉じる・よそ見のポーズは使わない
+  const localEyes = style === 'anime' ? eyes : 'natural makeup';
+  const an = style === 'anime';
+  const localHead = an
+    ? 'masterpiece, best quality, anime illustration, 1girl, solo, adult woman, full body, standing, facing viewer, head to toe, womanly figure, open eyes looking at viewer, fully clothed'
+    : 'RAW photo, full body portrait of a beautiful 25 year old japanese woman standing facing the camera, front view, head to toe, womanly figure, long legs, open eyes looking at viewer, detailed face, sharp focus, fully clothed';
+  const localHeadUpper = an
+    ? 'masterpiece, best quality, anime illustration, 1girl, adult woman, upper body, womanly figure, beautiful detailed face, beautiful detailed open eyes, looking at viewer, fully clothed'
+    : 'RAW photo, upper body portrait of a beautiful 25 year old japanese woman, womanly figure, face focus, detailed face, open eyes looking at viewer, natural skin texture, sharp focus, soft natural light, fully clothed';
+  const joinP = a => a.map(x => String(x || '').trim().replace(/,+$/, '')).filter(Boolean).join(', ');
+  const localRest = [custom, hair, localEyes, localPose, outfit, elemScene, tarotAura, moonVisual, rokuyoVibe, pillarAccent, kyuseiAccent, numEffect];
+  const localPrompt = joinP([localHead, ...localRest]);
+  const localPromptNoFace = joinP([localHeadUpper, ...localRest]);
+  // 顔の描き直し用（顔の周りだけを拡大して描くので、顔のアップとして指示する）
+  const localFacePrompt = joinP([an
+    ? 'masterpiece, best quality, anime illustration, close-up portrait, 1girl, adult woman, beautiful detailed face, beautiful detailed open eyes, looking at viewer'
+    : 'RAW photo, close-up portrait of a beautiful 25 year old japanese woman, beautiful detailed face, detailed open eyes looking at viewer, natural skin texture, sharp focus, soft natural light',
+    hair, localEyes, localPose]);
   // 禁止語は先頭（安全のため必ず読まれる位置）に置く
-  const localNegative = style === 'anime'
-    ? 'nude, nsfw, revealing, cleavage, child, loli, full body, photo, realistic, 3d, deformed face, bad eyes, asymmetrical eyes, bad anatomy, bad hands, extra limbs, blurry, low quality, watermark, ugly'
-    : 'nude, nsfw, revealing, cleavage, low-cut, child, kid, full body, wide shot, painting, illustration, cartoon, anime, 3d render, cgi, plastic skin, deformed face, asymmetrical eyes, cross-eyed, bad anatomy, extra limbs, blurry, low quality, watermark';
+  const negSafe = 'nude, nsfw, revealing, cleavage, ' + (an ? 'child, loli' : 'child, teen') + ', flat chest, closed eyes, ';
+  const negTail = an
+    ? 'photo, realistic, 3d, deformed face, bad eyes, bad hands, extra fingers, bad anatomy, extra limbs, blurry, low quality, watermark'
+    : 'painting, illustration, cartoon, anime, 3d render, cgi, deformed face, bad hands, extra fingers, bad anatomy, extra limbs, blurry, low quality, watermark';
+  const localNegative = negSafe + 'from behind, back view, looking away, cropped, close-up, cut off legs, ' + negTail;
+  const localNegativeNoFace = negSafe + 'looking away, full body, wide shot, ' + negTail;
 
   const theme = `${element}(${BIRTH_ELEM.label})・${rokuyo}・${moon.name}・${tarot.n}・数${numerology.universalNum}`;
 
@@ -1542,7 +1561,7 @@ function buildPrompt(div) {
     score
   });
 
-  return { prompt: fullPrompt, negative: negPrompt, localPrompt, localNegative, theme, elemLabel, style, tarotName: tarot.n, dateSeed: ds, mode: 'oracle' };
+  return { prompt: fullPrompt, negative: negPrompt, localPrompt, localNegative, localPromptNoFace, localNegativeNoFace, localFacePrompt, theme, elemLabel, style, tarotName: tarot.n, dateSeed: ds, mode: 'oracle' };
 }
 
 // HTML属性/本文へ値を差し込む際の最小エスケープ
@@ -2438,7 +2457,7 @@ function _genOneVariation(seed, pd, onOk, onErr) {
   // 📴 端末内（常に使う設定、またはオフライン時）
   const mode = getLocalMode();
   if(localAvailable() && pd.mode !== 'img2img' && mode !== 'off' && (mode === 'always' || !navigator.onLine)) {
-    LOCAL_GEN.generate({ prompt: pd.localPrompt || pd.prompt, negative: pd.localNegative || pd.negative, seed, quality: getImgQuality(), signal: _varAbort && _varAbort.signal })
+    LOCAL_GEN.generate({ prompt: pd.localPromptNoFace || pd.localPrompt || pd.prompt, negative: pd.localNegativeNoFace || pd.localNegative || pd.negative, seed, quality: getImgQuality(), signal: _varAbort && _varAbort.signal })
       .then(r => onOk(URL.createObjectURL(r.blob), true, '端末内 ' + r.label))
       .catch(() => { if(!(_varAbort && _varAbort.signal.aborted)) network(); });
     return;
@@ -2695,6 +2714,7 @@ function finishWithImage(src, winner, promptData, token) {
     try {
       // AI超解像する予定なら原寸のまま先に出す（数秒〜十数秒かかるため待たせない）
       const cv = (plan ? null : upscaleCanvas(off, quality)) || drawToCanvas(off);
+      await pasteFaceDetail(cv, off);
       blob  = await encode(cv);
       thumb = makeThumb(off);
       info.ow = cv.width; info.oh = cv.height; info.fmt = blob.type === 'image/png' ? 'PNG' : 'JPEG';
@@ -2714,6 +2734,39 @@ function finishWithImage(src, winner, promptData, token) {
     show(src, null, winner, null);
   };
   off.src = src;
+}
+
+// 端末内生成で描き直した顔（LOCAL_GEN の detail）を、拡大後の画像の同じ位置に貼る。
+//   顔は元画像の一部を最大4倍の大きさで描き直してあるので、拡大後の画像に貼るとほぼ原寸の細かさになる。
+//   境目が見えないよう、楕円のぼかしマスクで混ぜる
+let _faceDetail = null;
+function setFaceDetail(srcUrl, d) {
+  _faceDetail = null;
+  if(!d || !d.blob) return;
+  const img = new Image();
+  const ready = new Promise(res => { img.onload = () => res(true); img.onerror = () => res(false); });
+  img.src = URL.createObjectURL(d.blob);
+  _faceDetail = { src: srcUrl, img, ready, rect: d.rect, w: d.width, h: d.height };
+}
+async function pasteFaceDetail(cv, off) {
+  const d = _faceDetail;
+  if(!d || !cv || !off || off.src !== d.src) return;
+  try {
+    if(!(await d.ready)) return;
+    const k = cv.width / d.w, x = d.rect.x * k, y = d.rect.y * k, w = d.rect.w * k, h = d.rect.h * k;
+    const t = document.createElement('canvas'); t.width = Math.max(1, Math.round(w)); t.height = Math.max(1, Math.round(h));
+    const tx = t.getContext('2d'); tx.imageSmoothingEnabled = true; tx.imageSmoothingQuality = 'high';
+    tx.drawImage(d.img, 0, 0, t.width, t.height);
+    // 楕円マスク: 中心〜62% は不透明、端に向かってなだらかに透明へ
+    tx.globalCompositeOperation = 'destination-in';
+    tx.save(); tx.translate(t.width / 2, t.height / 2); tx.scale(t.width / 2, t.height / 2);
+    const g = tx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.62, 'rgba(0,0,0,1)'); g.addColorStop(0.72, 'rgba(0,0,0,.82)');
+    g.addColorStop(0.82, 'rgba(0,0,0,.45)'); g.addColorStop(0.92, 'rgba(0,0,0,.12)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    tx.fillStyle = g; tx.fillRect(-1, -1, 2, 2); tx.restore();
+    const cx = cv.getContext('2d'); cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+    cx.drawImage(t, x, y, w, h);
+  } catch(e) { console.warn('[LGO] 顔の貼り付けを省略:', e); }
 }
 
 // 表示済みの画像を AI 超解像し、完了したら表示・保存データ・履歴を差し替える
@@ -2744,6 +2797,7 @@ async function runAiEnhance(off, plan, ctx) {
         if(now - lastPaint > 250 && ctx.token === GEN_TOKEN) { lastPaint = now; _renderQualityBadge(); }
       },
     });
+    await pasteFaceDetail(cv, off);
     await swapIn(cv);
     info.srState = 'done';                        // 差し替えまで終えてから完了扱いにする
   } catch(e) {
@@ -2752,7 +2806,7 @@ async function runAiEnhance(off, plan, ctx) {
     info.srState = 'failed';
     info.note = (info.note ? info.note + ' ／ ' : '※') + 'AI超解像を使えなかったため通常の拡大で保存';
     const up = upscaleCanvas(off, ctx.quality);
-    if(up) { try { await swapIn(up); } catch(e2) {} }
+    if(up) { try { await pasteFaceDetail(up, off); await swapIn(up); } catch(e2) {} }
   } finally {
     clearTimeout(to);
     lsSet(SR_RUN_KEY, null);
@@ -2920,15 +2974,21 @@ function generateImage(promptData, seed) {
     const glog = { t: Date.now(), how: navigator.standalone ? 'ホーム画面アプリ' : 'ブラウザ', quality: getImgQuality(), safe: tag ? safe : null, lines: [] };
     const gl = text => { glog.lines.push(((Date.now() - glog.t) / 1000).toFixed(1) + '秒 ' + text); if(glog.lines.length > 80) glog.lines.splice(10, 1); lsSet('lg_local_log', JSON.stringify(glog)); };
     gl('生成開始');
+    // 顔の描き直しを使う時だけ全身の構図にする（使わない時は顔が崩れないよう上半身）
+    const useFace = !tag && getLocalFace() && !!promptData.localFacePrompt;
     LOCAL_GEN.generate({
-      prompt: promptData.localPrompt || promptData.prompt, negative: promptData.localNegative || promptData.negative,
+      prompt: (useFace ? promptData.localPrompt : promptData.localPromptNoFace || promptData.localPrompt) || promptData.prompt,
+      negative: (useFace ? promptData.localNegative : promptData.localNegativeNoFace || promptData.localNegative) || promptData.negative,
       seed, quality: getImgQuality(), signal: ac.signal,
       tier: safe.tier, size: safe.size,
+      face: useFace ? { prompt: promptData.localFacePrompt } : null,
       onLog: text => gl('［' + text + '］'),
       onProgress: (ph, f) => {
         gl(ph + (f > 0 ? ' ' + Math.round(f * 100) + '%' : ''));
-        if(ph !== lastPh) { lastPh = ph; localRunMark(ph, safe); }       // どの段階で落ちたかを記録
-        setStage((/:load$/.test(ph) ? '📴 端末内: 部品を読み込み中…'
+        const mk = /^face/.test(ph) ? 'face' : ph;
+        if(mk !== lastPh) { lastPh = mk; localRunMark(mk, safe); }       // どの段階で落ちたかを記録
+        setStage((/^face/.test(ph) ? `📴 端末内: 顔を描き直し中… ${ph === 'face' ? Math.round(f * 100) + '%' : ''}`
+                : /:load$/.test(ph) ? '📴 端末内: 部品を読み込み中…'
                 : ph === 'unet:run' ? '📴 端末内で描画中… 0%'
                 : /:run$/.test(ph) ? '📴 端末内: ' + (ph[0] === 't' ? '文章を解析中…' : '仕上げ中…')
                 : ph === 'text' ? '📴 端末内: 文章を解析中…'
@@ -2938,8 +2998,8 @@ function generateImage(promptData, seed) {
     }).then(r => {
       if(_genAbort === ac) _genAbort = null;
       localRunClear(true);
-      gl(`完了 ${r.width}×${r.height}`);
-      if(!done) win(URL.createObjectURL(r.blob), '端末内 ' + r.label);
+      gl(`完了 ${r.width}×${r.height}` + (r.detail ? '・顔の描き直しあり' : ''));
+      if(!done) { const u = URL.createObjectURL(r.blob); setFaceDetail(u, r.detail); win(u, '端末内 ' + r.label); }
     }).catch(e => {
       if(_genAbort === ac) _genAbort = null;
       localRunClear(false);
@@ -3448,7 +3508,7 @@ function toggleSettings() {
     setSafeMode(getSafeMode());
     setEnhanceMode(getEnhanceMode());
     setHfEnabled(getHfEnabled());
-    setAiSrEnabled(getAiSrEnabled());
+    setAiSrEnabled(getAiSrEnabled()); setLocalFace(getLocalFace());
     setLocalMode(getLocalMode());
     refreshLocalStatus();
   }
@@ -3492,14 +3552,26 @@ function localSafeOptions() {
   return { tier: LOCAL_SAFE.tier, size: Object.assign({}, LOCAL_SAFE.size) };   // 軽量モデルが未保存なら保存済みのモデルで（LOCAL_GEN 側で判断）
 }
 const LOCAL_SAFE = { tier: 'S', size: { w: 256, h: 384 } };   // 実機テスト第13回で完走した大きさ（拡大して仕上げる）
+// 顔の描き直し（端末内生成のあと、顔だけ拡大して描き直す）。描き直し中に強制終了したら自動で OFF にする
+function getLocalFace() { try { return localStorage.getItem('lg_local_face') !== '0'; } catch(e) { return true; } }
+function setLocalFace(on) {
+  lsSet('lg_local_face', on ? '1' : '0');
+  const b = document.getElementById('localFaceBtn');
+  if(b) { b.classList.toggle('active', on); b.textContent = on ? '🙂 顔の描き直し：ON' : '🙂 顔の描き直し：OFF'; }
+}
 const LOCAL_PHASE_LABEL = { start: '準備', 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章の解析', text: '文章の解析',
-  'unet:load': '描画部品の読込', 'unet:run': '描画（1工程目）', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ', vae: '仕上げ' };
+  'unet:load': '描画部品の読込', 'unet:run': '描画（1工程目）', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ', vae: '仕上げ', face: '顔の描き直し' };
 function checkLocalCrash() {
   const raw = lsGet(LOCAL_RUN_KEY);
   if(raw) {
     lsSet(LOCAL_RUN_KEY, null);
     let r = {}; try { r = JSON.parse(raw) || {}; } catch(e){}
-    if(Date.now() - (r.t || 0) < 3 * 3600e3) {
+    if(Date.now() - (r.t || 0) < 3 * 3600e3 && /^face/.test(r.phase || '')) {
+      // 顔の描き直し中に落ちた → 全体の生成は通っているので、描き直しだけ切る（軽い設定には落とさない）
+      setLocalFace(false);
+      console.warn('[LGO] 顔の描き直し中に強制終了を検知:', r);
+      showToast('前回、顔の描き直し中に強制終了したため、顔の描き直しをOFFにしました（設定で戻せます）');
+    } else if(Date.now() - (r.t || 0) < 3 * 3600e3) {
       const n = localCrashCount() + 1;
       lsSet(LOCAL_CRASH_KEY, String(n));
       const at = LOCAL_PHASE_LABEL[r.phase] || r.phase || '?';
@@ -3714,8 +3786,7 @@ async function init() {
       theme: todayEntry.theme, elemLabel: currentPromptData.elemLabel,
     };
     if(!todayEntry.prompt || todayEntry.prompt === currentPromptData.prompt) {   // 同じ指示文なら端末内用も引き継ぐ
-      _lastPromptData.localPrompt = currentPromptData.localPrompt;
-      _lastPromptData.localNegative = currentPromptData.localNegative;
+      ['localPrompt', 'localNegative', 'localPromptNoFace', 'localNegativeNoFace', 'localFacePrompt'].forEach(k => { _lastPromptData[k] = currentPromptData[k]; });
     }
     _lastSeed = getDailySeed(currentDiv) + Math.floor(Math.random() * 9999);
     img.onload = () => {

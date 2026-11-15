@@ -14,7 +14,7 @@
      ← { type:'progress', ph, f } / { type:'done', r } / { type:'error', message, name } / { type:'log', text }（debug 時）
    ════════════════════════════════════════════════════════════ */
 'use strict';
-const WORKER_VERSION = '2026-11-15f';
+const WORKER_VERSION = '2026-11-16a';
 
 async function probe(m) {
   const out = { type: 'probe', gpu: !!(self.navigator && navigator.gpu), adapter: false, f16: false,
@@ -191,6 +191,14 @@ function makeEnv(m) {
     settle: st ? kind => settleGpu(st, kind) : null,
     tick: st && st.gc ? gcPoke : null,
     vaeMaxArea: m.vaeMaxArea || 0,
+    log: m.debug ? text => self.postMessage({ type: 'log', text }) : null,
+    // 顔の検出モデル（YuNet・232KB）。小さいので CPU(wasm) で動かす（GPU のメモリを使わない）
+    loadFaceModel: m.faceModelUrl ? async () => {
+      const r = await fetch(m.faceModelUrl);
+      if (!r.ok) throw new Error('顔検出モデルを読み込めません');
+      return new Uint8Array(await r.arrayBuffer());
+    } : null,
+    faceSessionOptions: () => ({ executionProviders: ['wasm'], logSeverityLevel: 3 }),
     loadModel: async comp => {
       const name = comp + '.onnx';
       const fh = await (await dirOf(m.root + '/' + m.tier)).getFileHandle(name);
@@ -337,6 +345,12 @@ self.onmessage = async e => {
       self.postMessage({ type: 'done', r: { diag: out } });
       return;
     }
+    if (m.cmd === 'face') {            // 診断用: 顔の検出だけ（画像は m.rgba / m.w / m.h）
+      loadOrt(m);
+      const t0 = Date.now(), box = await LocalGenCore._detectFace(makeEnv(m), m.rgba, m.w, m.h);
+      self.postMessage({ type: 'done', r: { box, ms: Date.now() - t0 } });
+      return;
+    }
     if (m.cmd !== 'generate') return;
     if (m.uploadMode) self.LGO_ORT_UPLOAD = m.uploadMode;
     loadOrt(m);
@@ -345,7 +359,7 @@ self.onmessage = async e => {
       onProgress: (ph, f) => self.postMessage({ type: 'progress', ph, f }),
     }));
     if (m.debug && PACE.on) self.postMessage({ type: 'log', text: 'GPUへの送信 ' + JSON.stringify(paceStats(false)) });
-    self.postMessage({ type: 'done', r }, [r.rgba.buffer]);
+    self.postMessage({ type: 'done', r }, r.detail ? [r.rgba.buffer, r.detail.rgba.buffer] : [r.rgba.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', message: String(err && err.message || err), name: err && err.name });
   }

@@ -1,7 +1,7 @@
 // 運気の女神 Lucky Girl Oracle ── Service Worker
 // アプリシェル(HTML/アイコン)をキャッシュしてオフライン起動＆高速再表示。
 // 画像生成API(Pollinations/Horde)など外部オリジンはSWを介さずネットワークへ通す。
-const CACHE = 'lg-oracle-v21';
+const CACHE = 'lg-oracle-v22';
 const FONT_CACHE = 'lg-fonts-v1';   // Google Fonts（更新頻度が低いので別枠で長期保持）
 
 // アプリシェル: 起動に必須のものだけ。スプラッシュ(assets/splash)は
@@ -13,10 +13,11 @@ const ASSETS = [
   './assets/icons/icon-512-maskable.png',
   './assets/icons/apple-touch-icon.png',
   // 端末内生成の部品（オフライン時にも必要）。?v= は assets/ai/local-gen.js の AV とそろえる
-  './assets/ai/local-gen.js?v=2026-11-15f',
-  './assets/ai/local-gen-worker.js?v=2026-11-15f',
-  './assets/ai/local-gen-run-worker.js?v=2026-11-15f',
-  './assets/ai/local-gen-core.js?v=2026-11-15f',
+  './assets/ai/local-gen.js?v=2026-11-16a',
+  './assets/ai/local-gen-worker.js?v=2026-11-16a',
+  './assets/ai/local-gen-run-worker.js?v=2026-11-16a',
+  './assets/ai/local-gen-core.js?v=2026-11-16a',
+  './assets/ai/models/yunet/face_detection_yunet_2023mar.onnx',   // 顔の検出（顔の描き直し用・232KB）
 ];
 
 self.addEventListener('install', e => {
@@ -79,7 +80,8 @@ self.addEventListener('fetch', e => {
   }
 
   // AI超解像のモデル重みは本体側が IndexedDB に保存するので、SWでは二重に持たない
-  if (url.pathname.includes('/assets/ai/models/')) return;
+  //   （顔の検出モデル yunet は小さく、オフラインの端末内生成でも使うので SW で持つ）
+  if (url.pathname.includes('/assets/ai/models/') && !url.pathname.includes('/yunet/')) return;
 
   // 端末内生成の実行部品（約29MB）は中身が変わらないのでキャッシュ優先。
   // 裏での再取得もしない（stale-while-revalidate だと毎回29MBを取り直してしまう）

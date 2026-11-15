@@ -172,6 +172,12 @@
     return {
       timesteps,
       sigmas,
+      // きれいな latent に、工程 i 開始時点のノイズを載せる（途中から描き直す時に使う）
+      addNoise(i, x0, noise) {
+        const [al, sg] = alphaSigma(sigmas[i]), out = new Float32Array(x0.length);
+        for (let k = 0; k < out.length; k++) out[k] = al * x0[k] + sg * noise[k];
+        return out;
+      },
       // eps（ノイズ予測）と現在の latent から次の latent を返す
       step(i, eps, sample) {
         const sS = sigmas[i], sT = sigmas[i + 1];
@@ -179,7 +185,7 @@
         const x0 = new Float32Array(sample.length);
         for (let k = 0; k < x0.length; k++) x0[k] = (sample[k] - sgS * eps[k]) / alS;
         const out = new Float32Array(sample.length);
-        const firstOrder = i === 0 || i === timesteps.length - 1;
+        const firstOrder = !prevX0.length || i === timesteps.length - 1;   // 履歴が無い最初の1回（途中から始める時も）と最後は1次
         if (sT === 0) { out.set(x0); }
         else {
           const [alT, sgT] = alphaSigma(sT);
@@ -284,6 +290,54 @@
     return acc;
   }
 
+  // ── 顔の検出（YuNet・232KB・CPU/wasm で実行）─────────────────
+  //   入力 640×640（BGR・0〜255）。出力は刻み 8/16/32 ごとの 確度(cls×obj)・枠。最も確かな顔を1つ返す
+  async function detectFace(env, rgba, W, H) {
+    const S = 640, sc = Math.min(S / W, S / H), nw = Math.round(W * sc), nh = Math.round(H * sc);
+    const inp = new Float32Array(3 * S * S);
+    for (let y = 0; y < nh; y++) {
+      const fy = Math.min(H - 1, (y + 0.5) / sc - 0.5), y0 = Math.max(0, Math.floor(fy)), y1 = Math.min(H - 1, y0 + 1), ty = Math.max(0, fy - y0);
+      for (let x = 0; x < nw; x++) {
+        const fx = Math.min(W - 1, (x + 0.5) / sc - 0.5), x0 = Math.max(0, Math.floor(fx)), x1 = Math.min(W - 1, x0 + 1), tx = Math.max(0, fx - x0);
+        for (let c = 0; c < 3; c++) {
+          const a = rgba[(y0 * W + x0) * 4 + c], b = rgba[(y0 * W + x1) * 4 + c], d = rgba[(y1 * W + x0) * 4 + c], e = rgba[(y1 * W + x1) * 4 + c];
+          inp[(2 - c) * S * S + y * S + x] = (a * (1 - tx) + b * tx) * (1 - ty) + (d * (1 - tx) + e * tx) * ty;   // RGB → BGR
+        }
+      }
+    }
+    const s = await env.ort.InferenceSession.create(await env.loadFaceModel(), env.faceSessionOptions ? env.faceSessionOptions() : {});
+    let out;
+    try { out = await s.run({ [s.inputNames[0]]: new env.ort.Tensor('float32', inp, [1, 3, S, S]) }); }
+    finally { try { await s.release(); } catch (e) {} }
+    let best = null;
+    for (const st of [8, 16, 32]) {
+      const cls = out['cls_' + st].data, obj = out['obj_' + st].data, bb = out['bbox_' + st].data, cols = S / st, rows = S / st;
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const i = r * cols + c, score = Math.sqrt(Math.min(1, Math.max(0, cls[i])) * Math.min(1, Math.max(0, obj[i])));
+        if (score < 0.6 || (best && score <= best.score)) continue;
+        const cx = (c + bb[i * 4]) * st, cy = (r + bb[i * 4 + 1]) * st, w = Math.exp(bb[i * 4 + 2]) * st, h = Math.exp(bb[i * 4 + 3]) * st;
+        best = { x: (cx - w / 2) / sc, y: (cy - h / 2) / sc, w: w / sc, h: h / sc, score };
+      }
+    }
+    return best;
+  }
+  // latent の一部（小数座標の矩形）を lw×lh に拡大する（双一次補間）
+  function resampleLatent(lat, lw, lh, x0, y0, cw, ch) {
+    const out = new Float32Array(4 * lw * lh), P = lw * lh;
+    for (let y = 0; y < lh; y++) {
+      const fy = Math.min(lh - 1, Math.max(0, y0 + (y + 0.5) * ch / lh - 0.5)), ya = Math.floor(fy), yb = Math.min(lh - 1, ya + 1), ty = fy - ya;
+      for (let x = 0; x < lw; x++) {
+        const fx = Math.min(lw - 1, Math.max(0, x0 + (x + 0.5) * cw / lw - 0.5)), xa = Math.floor(fx), xb = Math.min(lw - 1, xa + 1), tx = fx - xa;
+        for (let c = 0; c < 4; c++) {
+          const o = c * P;
+          out[o + y * lw + x] = (lat[o + ya * lw + xa] * (1 - tx) + lat[o + ya * lw + xb] * tx) * (1 - ty)
+                              + (lat[o + yb * lw + xa] * (1 - tx) + lat[o + yb * lw + xb] * tx) * ty;
+        }
+      }
+    }
+    return out;
+  }
+
   // env.begin / env.end があれば生成の前後に呼ぶ（GPU 接続を最後まで保つ「つなぎ」用。下記）
   async function generate(env, o) {
     if (env.begin) await env.begin();
@@ -303,63 +357,107 @@
     // ① 文字 → トークン
     if (!env._tok) { const t = await env.loadTokenizer(); env._tok = new CLIPTokenizer(t.vocab, t.merges); }
     const neg = env._tok.encode(o.negative || ''), pos = env._tok.encode(o.prompt || '');
+    const face = o.face && env.loadFaceModel ? o.face : null;          // 顔の描き直し（下記 refineFace）
+    const fpos = face ? env._tok.encode(face.prompt || o.prompt || '') : null;
     check();
 
     // ② テキストエンコーダ（無条件・条件をまとめて1回で）
     prog('text', 0);
-    const ids = new BigInt64Array(2 * MAX_LEN);
+    const nb = face ? 3 : 2, ids = new BigInt64Array(nb * MAX_LEN);
     neg.ids.forEach((v, i) => { ids[i] = BigInt(v); });
     pos.ids.forEach((v, i) => { ids[MAX_LEN + i] = BigInt(v); });
-    const hid = await withSession(env, 'text_encoder', { batch: 2 }, async s => {
-      const out = await s.run({ input_ids: new ort.Tensor('int64', ids, [2, MAX_LEN]) });
+    if (face) fpos.ids.forEach((v, i) => { ids[2 * MAX_LEN + i] = BigInt(v); });
+    const hid = await withSession(env, 'text_encoder', { batch: nb }, async s => {
+      const out = await s.run({ input_ids: new ort.Tensor('int64', ids, [nb, MAX_LEN]) });
       return toF32(out.last_hidden_state.data);
     }, prog);
     const hs = MAX_LEN * 768;
     const ctxUncond = fromF32(ort, dt, hid.subarray(0, hs), [1, MAX_LEN, 768]);
     const ctxCond   = fromF32(ort, dt, hid.subarray(hs, 2 * hs), [1, MAX_LEN, 768]);
+    const ctxFace   = face ? fromF32(ort, dt, hid.subarray(2 * hs, 3 * hs), [1, MAX_LEN, 768]) : null;
     prog('text', 1); check();
 
     // ③ UNet で少しずつノイズを取り除く（CFG は1枚ずつ2回推論＝メモリ節約）
     const sch = makeScheduler(steps);
     let lat = gaussian(n, o.seed == null ? (Date.now() & 0x7fffffff) : o.seed);
     const tUnet = Date.now();
-    await withSession(env, 'unet', { batch: 1, h: lh, w: lw }, async s => {
-      for (let i = 0; i < steps; i++) {
+    const denoise = (x, sc, from, ctx, onStep) => withSession(env, 'unet', { batch: 1, h: lh, w: lw }, async s => {
+      for (let i = from; i < sc.timesteps.length; i++) {
         check();
-        const ts = fromF32(ort, dt, new Float32Array([sch.timesteps[i]]), []);
-        const sample = fromF32(ort, dt, lat, [1, 4, lh, lw]);
+        const ts = fromF32(ort, dt, new Float32Array([sc.timesteps[i]]), []);
+        const sample = fromF32(ort, dt, x, [1, 4, lh, lw]);
         const eu = toF32((await s.run({ sample, timestep: ts, encoder_hidden_states: ctxUncond })).out_sample.data);
         if (env.tick) await env.tick();              // 実行ごとに不要メモリの回収を促す
-        const ec = toF32((await s.run({ sample, timestep: ts, encoder_hidden_states: ctxCond })).out_sample.data);
+        const ec = toF32((await s.run({ sample, timestep: ts, encoder_hidden_states: ctx })).out_sample.data);
         const eps = new Float32Array(n);
         for (let k = 0; k < n; k++) eps[k] = eu[k] + g * (ec[k] - eu[k]);
-        lat = sch.step(i, eps, lat);
+        x = sc.step(i, eps, x);
         if (env.tick) await env.tick();
-        prog('unet', (i + 1) / steps);
+        onStep((i + 1 - from) / (sc.timesteps.length - from));
       }
-    }, prog);
+      return x;
+    }, onStep.prog);
+    const mainStep = f => prog('unet', f); mainStep.prog = prog;
+    lat = await denoise(lat, sch, 0, ctxCond, mainStep);
     const msUnet = Date.now() - tUnet;
     check();
 
     // ④ VAE デコーダで画像へ
     prog('vae', 0);
-    for (let k = 0; k < n; k++) lat[k] /= VAE_SCALE;
-    const tiles = planTiles(lw, lh, env.vaeMaxArea, 8);
-    const img = tiles ? await decodeTiled(env, ort, dt, lat, lw, lh, tiles, prog)
-      : await withSession(env, 'vae_decoder', { batch: 1, h: lh, w: lw }, async s => {
-        const out = await s.run({ latent_sample: fromF32(ort, dt, lat, [1, 4, lh, lw]) });
-        return toF32(out.sample.data);
-      }, prog);
-    const rgba = new Uint8ClampedArray(W * H * 4), plane = W * H;
-    for (let p = 0; p < plane; p++) {
-      rgba[p * 4]     = (img[p] / 2 + 0.5) * 255 + 0.5;
-      rgba[p * 4 + 1] = (img[plane + p] / 2 + 0.5) * 255 + 0.5;
-      rgba[p * 4 + 2] = (img[2 * plane + p] / 2 + 0.5) * 255 + 0.5;
-      rgba[p * 4 + 3] = 255;
-    }
+    const tiles = planTiles(lw, lh, env.vaeMaxArea, 8), plane = W * H;
+    const decode = async (x0, pg) => {               // latent → RGBA
+      const z = new Float32Array(n);
+      for (let k = 0; k < n; k++) z[k] = x0[k] / VAE_SCALE;
+      const img = tiles ? await decodeTiled(env, ort, dt, z, lw, lh, tiles, pg)
+        : await withSession(env, 'vae_decoder', { batch: 1, h: lh, w: lw }, async s => {
+          const out = await s.run({ latent_sample: fromF32(ort, dt, z, [1, 4, lh, lw]) });
+          return toF32(out.sample.data);
+        }, pg);
+      const px = new Uint8ClampedArray(plane * 4);
+      for (let p = 0; p < plane; p++) {
+        px[p * 4]     = (img[p] / 2 + 0.5) * 255 + 0.5;
+        px[p * 4 + 1] = (img[plane + p] / 2 + 0.5) * 255 + 0.5;
+        px[p * 4 + 2] = (img[2 * plane + p] / 2 + 0.5) * 255 + 0.5;
+        px[p * 4 + 3] = 255;
+      }
+      return px;
+    };
+    const rgba = await decode(lat, prog);
     prog('vae', 1);
+
+    // ⑤ 顔の描き直し（全身の構図では顔が小さく、そのままでは崩れやすい）
+    //    顔を検出 → その周りの latent を全体サイズまで拡大 → ノイズを載せて後半の工程だけやり直す → 画像にして返す。
+    //    描画・仕上げの部品は同じ大きさで使い回す。失敗しても全体の画像はそのまま返す
+    let detail = null;
+    if (face) {
+      try { detail = await refineFace(); }
+      catch (e) { if (e && e.name === 'AbortError') throw e; if (env.log) env.log('顔の描き直しを省略: ' + String(e && e.message || e).slice(0, 200)); }
+    }
+    async function refineFace() {
+      prog('face', 0);
+      const box = face.box || await detectFace(env, rgba, W, H);   // face.box はテスト用（検出を飛ばして枠を指定）
+      if (!box) { if (env.log) env.log('顔が見つからないため描き直しなし'); return null; }
+      // 顔の枠を頭全体（髪・あご・首）まで広げ、画像と同じ縦横比の切り出し枠にする
+      const ex = face.expand || 2.2, cwMin = W / (face.maxZoom || 4);
+      let cw = Math.max(box.w * ex, box.h * ex * W / H, cwMin);
+      if (cw > W / (face.minZoom || 1.5)) { if (env.log) env.log(`顔が十分大きいため描き直しなし（顔の幅 ${Math.round(box.w)}px）`); return null; }
+      const chh = cw * H / W;
+      let x0 = box.x + box.w / 2 - cw / 2, y0 = box.y + box.h * 0.45 - chh / 2;
+      x0 = Math.min(Math.max(0, x0), W - cw); y0 = Math.min(Math.max(0, y0), H - chh);
+      if (env.log) env.log(`顔を検出（幅 ${Math.round(box.w)}px・確度 ${(box.score || 1).toFixed(2)}）→ ${(W / cw).toFixed(1)}倍で描き直し`);
+      const up = resampleLatent(lat, lw, lh, x0 / 8, y0 / 8, cw / 8, chh / 8);
+      const fsteps = Math.max(4, face.steps || steps), from = Math.min(fsteps - 2, Math.max(0, Math.round(fsteps * (1 - (face.strength || 0.5)))));
+      const fsch = makeScheduler(fsteps);
+      const noisy = fsch.addNoise(from, up, gaussian(n, ((o.seed == null ? 1 : o.seed) ^ 0x5bd1e995) >>> 0));
+      const fprog = (ph, f) => prog('face:' + ph, f);
+      const fstep = f => prog('face', 0.05 + 0.75 * f); fstep.prog = fprog;
+      const flat = await denoise(noisy, fsch, from, ctxFace, fstep);
+      const frgba = await decode(flat, (ph, f) => (ph === 'vae' ? prog('face', 0.8 + 0.2 * f) : fprog(ph, f)));
+      prog('face', 1);
+      return { rgba: frgba, width: W, height: H, rect: { x: x0, y: y0, w: cw, h: chh }, box };
+    }
     return { rgba, width: W, height: H, steps, ms: Date.now() - t0, msPerStep: Math.round(msUnet / steps),
-             truncated: pos.truncated, tokensUsed: pos.used };
+             truncated: pos.truncated, tokensUsed: pos.used, detail };
   }
 
   // ── GPU 接続の「つなぎ」 ─────────────────────────────────
@@ -380,9 +478,9 @@
     };
   }
 
-  const VERSION = '2026-11-15f';
+  const VERSION = '2026-11-16a';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
-                _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles };   // _ 付きは診断用
+                _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles, _detectFace: detectFace };   // _ 付きは診断用
   root.LocalGenCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

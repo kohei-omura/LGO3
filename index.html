@@ -1514,6 +1514,21 @@ function buildPrompt(div) {
 
   const negPrompt = 'nude, nsfw, bad anatomy, extra limbs, blurry, low quality, watermark, ugly, deformed, revealing, exposed';
 
+  // 端末内生成用の指示文。端末内モデルは先頭 75 語分（CLIP の上限）しか読まないため、
+  //   通常の並びだと末尾の「ピント・肌の質感」などの写実指定が毎回切り捨てられていた（実測 115 語分）。
+  //   画質の指定を先頭に置き、飾り（九星の色・数秘など）は入りきる分だけにする。
+  const localHead = style === 'anime'
+    ? 'masterpiece, best quality, anime illustration, detailed face, beautiful detailed eyes, fully clothed'
+    : 'RAW photo, photorealistic portrait, detailed face, natural skin texture, sharp focus, soft natural light, fully clothed';
+  const localPrompt = [
+    localHead, custom, charBase.replace(/^1girl,\s*/, style === 'anime' ? '1girl, ' : ''), elemScene, tarotAura, moonVisual,
+    rokuyoVibe, pillarAccent, kyuseiAccent, numEffect,
+  ].map(x => String(x || '').trim().replace(/,+$/, '')).filter(Boolean).join(', ');
+  // 禁止語は先頭（安全のため必ず読まれる位置）に置く
+  const localNegative = style === 'anime'
+    ? 'nude, nsfw, revealing, photo, realistic, 3d, deformed face, bad eyes, asymmetrical eyes, bad anatomy, bad hands, extra limbs, blurry, low quality, watermark, ugly'
+    : 'nude, nsfw, revealing, painting, illustration, cartoon, anime, 3d render, cgi, airbrushed, plastic skin, deformed face, asymmetrical eyes, cross-eyed, bad anatomy, extra limbs, blurry, low quality, watermark';
+
   const theme = `${element}(${BIRTH_ELEM.label})・${rokuyo}・${moon.name}・${tarot.n}・数${numerology.universalNum}`;
 
   // 修正5: 修正値がプロンプト経路に流れていることを目視確認するための1行ログ
@@ -1525,7 +1540,7 @@ function buildPrompt(div) {
     score
   });
 
-  return { prompt: fullPrompt, negative: negPrompt, theme, elemLabel, style, tarotName: tarot.n, dateSeed: ds, mode: 'oracle' };
+  return { prompt: fullPrompt, negative: negPrompt, localPrompt, localNegative, theme, elemLabel, style, tarotName: tarot.n, dateSeed: ds, mode: 'oracle' };
 }
 
 // HTML属性/本文へ値を差し込む際の最小エスケープ
@@ -2279,7 +2294,7 @@ async function aiUpscaleCanvas(srcEl, plan, opt) {
   const out = await AI_SR.run(plan.key, ictx.getImageData(0, 0, iw, ih), opt);
   const big = document.createElement('canvas'); big.width = out.width; big.height = out.height;
   big.getContext('2d').putImageData(out, 0, 0);
-  if(Math.abs(out.height - plan.target) < 2) return big;
+  if(Math.abs(out.height - plan.target) < 2) return srFinish(big, srcEl, plan);
   // 目標サイズへ高品質リサンプル（縮小時は2段に分けてモアレを防ぐ＝超解像の余剰分をスーパーサンプリング）
   let cur = big;
   while(cur.height > plan.target * 2) {
@@ -2292,7 +2307,32 @@ async function aiUpscaleCanvas(srcEl, plan, opt) {
   const fin = document.createElement('canvas'); fin.width = fw; fin.height = plan.target;
   const fx = fin.getContext('2d'); fx.imageSmoothingEnabled = true; fx.imageSmoothingQuality = 'high';
   fx.drawImage(cur, 0, 0, fw, plan.target);
-  return fin;
+  return srFinish(fin, srcEl, plan);
+}
+
+// 写真調の仕上げ。Real-ESRGAN だけだと肌や背景が油絵のように塗りつぶされ、縞も出る。
+//   元画像を滑らかに拡大したものを 45% 混ぜて質感を戻し、ごく弱い粒子（輝度のみ）を足す。
+//   PC で比較し、AI拡大のみ／AIなし（目元がギザギザ）より自然だった方式。
+const SR_REAL_MIX = 0.45, SR_REAL_GRAIN = 3;
+function srFinish(cv, srcEl, plan) {
+  if(plan.key !== 'general4x') return cv;
+  try {
+    const x = cv.getContext('2d', { willReadFrequently: true });
+    x.save(); x.globalAlpha = SR_REAL_MIX; x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+    x.drawImage(srcEl, 0, 0, cv.width, cv.height); x.restore();
+    const W = cv.width, H = cv.height, band = 256;            // 帯ごとに処理して一時メモリを抑える
+    let r = 0x9e3779b9 ^ (W * 31 + H);
+    for(let y0 = 0; y0 < H; y0 += band) {
+      const h = Math.min(band, H - y0), im = x.getImageData(0, y0, W, h), d = im.data;
+      for(let i = 0; i < d.length; i += 4) {
+        r ^= r << 13; r ^= r >>> 17; r ^= r << 5;              // xorshift32
+        const n = (((r & 255) + ((r >>> 8) & 255) + ((r >>> 16) & 255)) / 382.5 - 1) * SR_REAL_GRAIN * 3;   // 標準偏差 ≒ SR_REAL_GRAIN
+        d[i] += n; d[i + 1] += n; d[i + 2] += n;                // Uint8Clamped なので範囲外は自動で丸まる
+      }
+      x.putImageData(im, 0, y0);
+    }
+  } catch(e) { console.warn('[LGO] 写真調の仕上げを省略:', e); }
+  return cv;
 }
 
 // キー付き取得: <img>はAuthorizationヘッダーを送れないため fetch+Bearer で認証する。
@@ -2396,7 +2436,7 @@ function _genOneVariation(seed, pd, onOk, onErr) {
   // 📴 端末内（常に使う設定、またはオフライン時）
   const mode = getLocalMode();
   if(localAvailable() && pd.mode !== 'img2img' && mode !== 'off' && (mode === 'always' || !navigator.onLine)) {
-    LOCAL_GEN.generate({ prompt: pd.prompt, negative: pd.negative, seed, quality: getImgQuality(), signal: _varAbort && _varAbort.signal })
+    LOCAL_GEN.generate({ prompt: pd.localPrompt || pd.prompt, negative: pd.localNegative || pd.negative, seed, quality: getImgQuality(), signal: _varAbort && _varAbort.signal })
       .then(r => onOk(URL.createObjectURL(r.blob), true, '端末内 ' + r.label))
       .catch(() => { if(!(_varAbort && _varAbort.signal.aborted)) network(); });
     return;
@@ -2879,7 +2919,8 @@ function generateImage(promptData, seed) {
     const gl = text => { glog.lines.push(((Date.now() - glog.t) / 1000).toFixed(1) + '秒 ' + text); if(glog.lines.length > 80) glog.lines.splice(10, 1); lsSet('lg_local_log', JSON.stringify(glog)); };
     gl('生成開始');
     LOCAL_GEN.generate({
-      prompt: promptData.prompt, negative: promptData.negative, seed, quality: getImgQuality(), signal: ac.signal,
+      prompt: promptData.localPrompt || promptData.prompt, negative: promptData.localNegative || promptData.negative,
+      seed, quality: getImgQuality(), signal: ac.signal,
       tier: safe.tier, size: safe.size,
       onLog: text => gl('［' + text + '］'),
       onProgress: (ph, f) => {
@@ -3670,6 +3711,10 @@ async function init() {
       style: todayEntry.style || currentStyle, mode: 'oracle',
       theme: todayEntry.theme, elemLabel: currentPromptData.elemLabel,
     };
+    if(!todayEntry.prompt || todayEntry.prompt === currentPromptData.prompt) {   // 同じ指示文なら端末内用も引き継ぐ
+      _lastPromptData.localPrompt = currentPromptData.localPrompt;
+      _lastPromptData.localNegative = currentPromptData.localNegative;
+    }
     _lastSeed = getDailySeed(currentDiv) + Math.floor(Math.random() * 9999);
     img.onload = () => {
       img.classList.add('loaded');

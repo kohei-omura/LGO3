@@ -1519,8 +1519,8 @@ function buildPrompt(div) {
   //   画質の指定を先頭に置き、飾り（九星の色・数秘など）は入りきる分だけにする。
   //   年齢と構図（上半身＝顔を大きく）も先頭で指定する。指定が弱いと全身が小さく写り、顔が崩れ、幼く見えた（実機）。
   const localHead = style === 'anime'
-    ? 'masterpiece, best quality, anime illustration, 1girl, young woman, upper body, beautiful detailed face, beautiful detailed eyes, fully clothed'
-    : 'RAW photo, upper body portrait of a beautiful young japanese woman in her twenties, face focus, detailed face, natural skin texture, sharp focus, soft natural light, fully clothed';
+    ? 'masterpiece, best quality, anime illustration, 1girl, young woman, upper body, beautiful detailed face, beautiful detailed eyes, fully clothed, modest high neckline'
+    : 'RAW photo, upper body portrait of a beautiful young japanese woman in her twenties, face focus, detailed face, natural skin texture, sharp focus, soft natural light, fully clothed, modest high neckline';
   const localChar = [hair, style === 'anime' ? eyes : 'natural makeup expressive eyes', pose, outfit].join(', ');
   const localPrompt = [
     localHead, custom, localChar, elemScene, tarotAura, moonVisual,
@@ -1528,8 +1528,8 @@ function buildPrompt(div) {
   ].map(x => String(x || '').trim().replace(/,+$/, '')).filter(Boolean).join(', ');
   // 禁止語は先頭（安全のため必ず読まれる位置）に置く
   const localNegative = style === 'anime'
-    ? 'nude, nsfw, revealing, child, loli, full body, photo, realistic, 3d, deformed face, bad eyes, asymmetrical eyes, bad anatomy, bad hands, extra limbs, blurry, low quality, watermark, ugly'
-    : 'nude, nsfw, revealing, child, kid, full body, wide shot, painting, illustration, cartoon, anime, 3d render, cgi, plastic skin, deformed face, asymmetrical eyes, cross-eyed, bad anatomy, extra limbs, blurry, low quality, watermark';
+    ? 'nude, nsfw, revealing, cleavage, child, loli, full body, photo, realistic, 3d, deformed face, bad eyes, asymmetrical eyes, bad anatomy, bad hands, extra limbs, blurry, low quality, watermark, ugly'
+    : 'nude, nsfw, revealing, cleavage, low-cut, child, kid, full body, wide shot, painting, illustration, cartoon, anime, 3d render, cgi, plastic skin, deformed face, asymmetrical eyes, cross-eyed, bad anatomy, extra limbs, blurry, low quality, watermark';
 
   const theme = `${element}(${BIRTH_ELEM.label})・${rokuyo}・${moon.name}・${tarot.n}・数${numerology.universalNum}`;
 

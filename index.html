@@ -1528,19 +1528,19 @@ function buildPrompt(div) {
   const localEyes = style === 'anime' ? eyes : 'natural makeup';
   const an = style === 'anime';
   const localHead = an
-    ? 'masterpiece, best quality, anime illustration, 1girl, solo, adult woman, full body, standing, facing viewer, head to toe, womanly figure, open eyes looking at viewer, fully clothed'
-    : 'RAW photo, full body portrait of a beautiful 25 year old japanese woman standing facing the camera, front view, head to toe, womanly figure, long legs, open eyes looking at viewer, detailed face, sharp focus, fully clothed';
+    ? 'masterpiece, best quality, anime illustration, wide shot, full body from head to toe, 1girl, solo, adult woman, standing, facing viewer, womanly curvy figure, long legs, wearing shoes, open eyes looking at viewer, fully clothed'
+    : 'RAW photo, wide shot, full body from head to toe, a beautiful 25 year old japanese woman standing facing the camera, front view, womanly curvy figure, long legs, wearing shoes, open eyes looking at viewer, sharp focus, fully clothed';
   const localHeadUpper = an
     ? 'masterpiece, best quality, anime illustration, 1girl, adult woman, upper body, womanly figure, beautiful detailed face, beautiful detailed open eyes, looking at viewer, fully clothed'
-    : 'RAW photo, upper body portrait of a beautiful 25 year old japanese woman, womanly figure, face focus, detailed face, open eyes looking at viewer, natural skin texture, sharp focus, soft natural light, fully clothed';
+    : 'RAW photo, upper body portrait of a beautiful 25 year old japanese woman, womanly curvy figure, face focus, detailed face, open eyes looking at viewer, natural skin texture, sharp focus, soft natural light, fully clothed';
   const joinP = a => a.map(x => String(x || '').trim().replace(/,+$/, '')).filter(Boolean).join(', ');
   const localRest = [custom, hair, localEyes, localPose, outfit, elemScene, tarotAura, moonVisual, rokuyoVibe, pillarAccent, kyuseiAccent, numEffect];
   const localPrompt = joinP([localHead, ...localRest]);
   const localPromptNoFace = joinP([localHeadUpper, ...localRest]);
   // 顔の描き直し用（顔の周りだけを拡大して描くので、顔のアップとして指示する）
   const localFacePrompt = joinP([an
-    ? 'masterpiece, best quality, anime illustration, close-up portrait, 1girl, adult woman, beautiful detailed face, beautiful detailed open eyes, looking at viewer'
-    : 'RAW photo, close-up portrait of a beautiful 25 year old japanese woman, beautiful detailed face, detailed open eyes looking at viewer, natural skin texture, sharp focus, soft natural light',
+    ? 'masterpiece, best quality, anime illustration, close-up portrait, 1girl, adult woman, mature elegant face, beautiful detailed face, beautiful detailed open eyes, looking at viewer'
+    : 'RAW photo, close-up portrait of a beautiful 28 year old japanese woman, mature elegant adult face, detailed open eyes looking at viewer, natural skin texture, sharp focus, soft natural light',
     hair, localEyes, localPose]);
   // 禁止語は先頭（安全のため必ず読まれる位置）に置く
   const negSafe = 'nude, nsfw, revealing, cleavage, ' + (an ? 'child, loli' : 'child, teen') + ', flat chest, closed eyes, ';

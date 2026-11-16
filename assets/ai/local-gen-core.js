@@ -370,18 +370,26 @@
 
     // ② テキストエンコーダ（無条件・条件をまとめて1回で）
     prog('text', 0);
-    const nb = face ? 3 : 2, ids = new BigInt64Array(nb * MAX_LEN);
+    // 文章部品は常に batch 2（第15回まで実機で成功していた形）。顔用の指示文は同じセッションでもう1回実行する
+    //   （16a〜16c は batch 3 にしたあと、448×640 の描画1工程目で3回続けて強制終了したため戻す）
+    const ids = new BigInt64Array(2 * MAX_LEN);
     neg.ids.forEach((v, i) => { ids[i] = BigInt(v); });
     pos.ids.forEach((v, i) => { ids[MAX_LEN + i] = BigInt(v); });
-    if (face) fpos.ids.forEach((v, i) => { ids[2 * MAX_LEN + i] = BigInt(v); });
-    const hid = await withSession(env, 'text_encoder', { batch: nb }, async s => {
-      const out = await s.run({ input_ids: new ort.Tensor('int64', ids, [nb, MAX_LEN]) });
-      return toF32(out.last_hidden_state.data);
-    }, prog);
     const hs = MAX_LEN * 768;
+    let fhid = null;
+    const hid = await withSession(env, 'text_encoder', { batch: 2 }, async s => {
+      const h = toF32((await s.run({ input_ids: new ort.Tensor('int64', ids, [2, MAX_LEN]) })).last_hidden_state.data);
+      if (face) {
+        const fids = new BigInt64Array(2 * MAX_LEN);
+        fpos.ids.forEach((v, i) => { fids[i] = BigInt(v); fids[MAX_LEN + i] = BigInt(v); });
+        fhid = toF32((await s.run({ input_ids: new ort.Tensor('int64', fids, [2, MAX_LEN]) })).last_hidden_state.data).slice(0, hs);
+      }
+      return h;
+    }, prog);
     const ctxUncond = fromF32(ort, dt, hid.subarray(0, hs), [1, MAX_LEN, 768]);
     const ctxCond   = fromF32(ort, dt, hid.subarray(hs, 2 * hs), [1, MAX_LEN, 768]);
-    const ctxFace   = face ? fromF32(ort, dt, hid.subarray(2 * hs, 3 * hs), [1, MAX_LEN, 768]) : null;
+    const ctxFace   = face ? fromF32(ort, dt, fhid, [1, MAX_LEN, 768]) : null;
+    fhid = null;
     prog('text', 1); check();
 
     // ③ UNet で少しずつノイズを取り除く（CFG は1枚ずつ2回推論＝メモリ節約）
@@ -551,7 +559,7 @@
     };
   }
 
-  const VERSION = '2026-11-16c';
+  const VERSION = '2026-11-17a';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
                 _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles, _detectFace: detectFace, _tilePos: tilePos };   // _ 付きは診断用
   root.LocalGenCore = api;

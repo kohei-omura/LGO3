@@ -107,13 +107,13 @@
      Dawn 計測: 2回目以降の実行で新しく作るバッファは 4個・約0MB（以前は1回 94MB・1513個）。捨てた分が返るまでの時間差に左右されなくなる
    - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128&pace=0&cap=96&vae=100&buf=lazyRelease（buf は GPU バッファの方式・pace=0 で待ち合わせなし・cap は余裕の測定の上限MB・vae は仕上げを分割する大きさ）
    ════════════════════════════════════════════════════════════ */
-const KEY = 'lgo_diag_gen_v10';
+const KEY = 'lgo_diag_gen_v11';
 const MB = 1048576;
 const Q = new URLSearchParams(location.search);
 const EP = Q.get('ep') || 'webgpu';
 const ROOT_DIR = 'lgo-localgen';
 const COMP = 'unet';
-const AV = '2026-11-16c';
+const AV = '2026-11-17a';
 // アプリ本体と同じ種類の指示文（全身の構図＋顔の描き直し）
 const PROMPT = 'RAW photo, wide shot, full body from head to toe, a beautiful 25 year old japanese woman standing facing the camera, front view, womanly curvy figure, long legs, wearing shoes, open eyes looking at viewer, sharp focus, fully clothed, long black hair, gentle smile, floral dress, flower garden',
   NEG = 'nude, nsfw, revealing, cleavage, child, teen, flat chest, closed eyes, from behind, back view, looking away, cropped, close-up, cut off legs, painting, illustration, cartoon, anime, deformed face, bad hands, bad anatomy, blurry, low quality',
@@ -128,17 +128,22 @@ const U = (sz, runs) => ({ unet: { w: SZ(sz)[0], h: SZ(sz)[1], runs, emb: 'synth
 const CAP = +(Q.get('cap') || 2400);
 const NOFACE = Q.get('face') === '0';   // 比較用: face=0 で顔の描き直しなし
 const APP_SZ = SZ([448, 640]), APP_STEPS = TEST_SZ ? 2 : 25;
-const MEASURE = Q.get('measure') === '0' ? [] : [[256, 384], [320, 480], [384, 576], [448, 640]];
+// 第16回の測定は済み（余裕 320×480: 896MB / 384×576: 736MB / 448×640: 608MB）。measure=1 の時だけ再測定
+const MEASURE = Q.get('measure') === '1' ? [[256, 384], [320, 480], [384, 576], [448, 640]] : [];
 const STEPS = [
   { id: 'env', title: '1. 準備（保存済みモデルの確認）',                       run: stepEnv },
   { id: 'v0',  title: '2. 部品の版と Worker の確認',                           run: stepProbe },
-  { id: 'g1',  title: `3. アプリと同じ条件の生成（軽量 ${APP_SZ.join('×')}・${APP_STEPS}工程・顔の描き直しあり）`, run: s => stepGen(s, APP_SZ, APP_STEPS), reloadBefore: true },
+  // 第17回: 16a 以降の 448×640 の強制終了（3回続けて描画1工程目）が「顔の描き直し」の追加と関係するかを比べる。
+  //   顔の描き直しあり → なし（第15回までと同じ処理）→ あり の順に、毎回ページを読み込み直して生成する
+  { id: 'g1', title: `3. アプリと同じ条件の生成（軽量 ${APP_SZ.join('×')}・${APP_STEPS}工程・顔の描き直しあり）`, run: s => stepGen(s, APP_SZ, APP_STEPS, !NOFACE), reloadBefore: true },
+  { id: 'g2', title: `4. 顔の描き直しなしの生成（軽量 ${APP_SZ.join('×')}・${APP_STEPS}工程・第15回までと同じ処理）`, run: s => stepGen(s, APP_SZ, APP_STEPS, false), reloadBefore: true },
+  { id: 'g3', title: `5. もう一度 顔の描き直しありの生成（軽量 ${APP_SZ.join('×')}・${APP_STEPS}工程）`, run: s => stepGen(s, APP_SZ, APP_STEPS, !NOFACE), reloadBefore: true },
   // 第16回: 描画部品を各大きさで2回動かした直後の「メモリの余裕」を測る（わざと上限まで確保するので、測定後にページが落ちるのは正常）
   //   → 構図を作る大きさ（今は 256×384）をどこまで上げられるかを決める
-  ...MEASURE.map((sz, i) => ({ id: 'm' + sz[0], title: `${4 + i}. メモリ測定: 描画 ${SZ(sz).join('×')} を2回のあと（測定後に落ちるのは正常）`,
+  ...MEASURE.map((sz, i) => ({ id: 'm' + sz[0], title: `${6 + i}. メモリ測定: 描画 ${SZ(sz).join('×')} を2回のあと（測定後に落ちるのは正常）`,
     run: s => stepDiag(s, Object.assign(U(sz, 2), { headroom: { when: 'run', capMB: CAP } })), reloadBefore: true, measure: true })),
 ];
-let state = load() || { v: 10, inProgress: false, steps: {} };
+let state = load() || { v: 11, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -231,7 +236,7 @@ async function stepProbe(s) {
 // 4〜5. アプリと同じ生成（LOCAL_GEN.generate）
 const PH = { 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章部品の作成完了', text: '文章の解析',
   'unet:load': '描画部品の読込', 'unet:run': '描画部品の作成完了→描画開始', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ部品の作成完了', vae: '仕上げ' };
-async function stepGen(s, size, nSteps) {
+async function stepGen(s, size, nSteps, withFace) {
   const STEPS_N = nSteps || (TEST_SZ ? 2 : 18);
   await useLocalGen();
   const st = await LOCAL_GEN.status();
@@ -241,9 +246,9 @@ async function stepGen(s, size, nSteps) {
   mark(s, `${w}×${h}・${STEPS_N}工程 生成開始`); await sleep(100);
   const t0 = performance.now();
   const up = !!(LOCAL_GEN.tiled && LOCAL_GEN.tiled());
-  mark(s, up ? '構図: 上半身（タイル方式）' : '構図: 全身');
+  mark(s, (up ? '構図: 上半身（タイル方式）' : '構図: 全身') + (withFace ? '・顔の描き直しあり' : '・顔の描き直しなし'));
   const r = await LOCAL_GEN.generate({ prompt: up ? PROMPT_UPPER : PROMPT, negative: up ? NEG_UPPER : NEG, seed: 1234, tier, size: { w, h }, steps: STEPS_N,
-    face: NOFACE ? null : { prompt: FACE_PROMPT },
+    face: withFace ? { prompt: FACE_PROMPT } : null,
     onLog: text => mark(s, '［' + text + '］'),
     onProgress: (ph, f) => {
       const k = ph + Math.round(f * 100); if (k === last) return; last = k;
@@ -291,8 +296,10 @@ function verdict() {
   const lines = STEPS.slice(2).map(d => `${d.title.replace(/^\d+\.\s*/, '')}: ${at(d.id)}`);
   const ok = id => st[id] && st[id].status === 'done', ng = id => st[id] && st[id].status === 'crashed';
   const msg = [];
-  if (ok('g1')) msg.push('診断ページでは成功 → 続けてアプリ本体で生成を試し、「📱 アプリでの生成記録」をコピーして送ってください');
-  else if (st.g1 && fin(st.g1)) msg.push('診断ページでも失敗 → タイル方式でも落ちています。記録を送ってください');
+  if (allDone()) {
+    const n = ['g1', 'g2', 'g3'].filter(ok).length;
+    msg.push(n === 3 ? 'すべて成功 → 続けてアプリ本体で生成を試してください' : '結果をそのまま送ってください（顔の描き直しの有無で落ち方が違うかを見ます）');
+  }
   return lines.join('\n') + (msg.length ? '\n→ ' + msg.join('\n→ ') : '');
 }
 

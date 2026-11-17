@@ -476,7 +476,7 @@
     </div>
   </div>
 </div>
-<script src="assets/ai/local-gen.js?v=2026-11-17a"></script>
+<script src="assets/ai/local-gen.js?v=2026-11-17b"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -3584,7 +3584,9 @@ function localCrashPaused() { return localCrashCount() >= 2; }
 let _localRunCount = 0, _heavyEndAt = 0;
 const LOCAL_REPEAT_WAIT_MS = 8000;
 function localRunMark(phase, safe) { lsSet(LOCAL_RUN_KEY, JSON.stringify({ t: Date.now(), phase, safe: !!(safe.tier || safe.size), repeat: _localRunCount > 1 })); }
-function localRunClear(ok) { lsSet(LOCAL_RUN_KEY, null); if(ok) lsSet(LOCAL_CRASH_KEY, null); }
+function localRunClear(ok) { lsSet(LOCAL_RUN_KEY, null); if(ok) { lsSet(LOCAL_CRASH_KEY, null); lsSet(LOCAL_RETRY_KEY, null); } }
+// 1回目の強制終了は同じ設定でもう一度試す（実機 17a: 開いた直後の1回目だけ落ち、落ちて読み込み直したあとの2回は成功）
+const LOCAL_RETRY_KEY = 'lg_local_retry';
 function localSafeOptions() {
   if(localCrashCount() < 1) return {};
   return { tier: LOCAL_SAFE.tier, size: Object.assign({}, LOCAL_SAFE.size) };   // 軽量モデルが未保存なら保存済みのモデルで（LOCAL_GEN 側で判断）
@@ -3598,11 +3600,11 @@ function setLocalFace(on) {
   if(b) { b.classList.toggle('active', on); b.textContent = on ? '🙂 顔の描き直し：ON' : '🙂 顔の描き直し：OFF'; }
 }
 const LOCAL_PHASE_LABEL = { start: '準備', 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章の解析', text: '文章の解析',
-  'unet:load': '描画部品の読込', 'unet:run': '描画（1工程目）', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ', vae: '仕上げ', face: '顔の描き直し' };
+  'warm:unet:load': '描画の下準備', 'warm:unet:run': '描画の下準備', 'unet:load': '描画部品の読込', 'unet:run': '描画（1工程目）', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ', vae: '仕上げ', face: '顔の描き直し' };
 function checkLocalCrash() {
   // アプリの版が変わったら安全設定を解く（対策を入れた新しい版は、通常の設定から試す）
   const ver = (typeof LOCAL_GEN !== 'undefined' && LOCAL_GEN.version) || '';
-  if(ver && lsGet('lg_local_appver') !== ver) { lsSet('lg_local_appver', ver); lsSet(LOCAL_CRASH_KEY, null); lsSet(LOCAL_RUN_KEY, null); }
+  if(ver && lsGet('lg_local_appver') !== ver) { lsSet('lg_local_appver', ver); lsSet(LOCAL_CRASH_KEY, null); lsSet(LOCAL_RUN_KEY, null); lsSet(LOCAL_RETRY_KEY, null); }
   const raw = lsGet(LOCAL_RUN_KEY);
   if(raw) {
     lsSet(LOCAL_RUN_KEY, null);
@@ -3616,7 +3618,13 @@ function checkLocalCrash() {
       // 同じ画面での2回目以降に落ちた → 開き直した直後なら通る見込みなので、軽い設定には落とさない
       console.warn('[LGO] 続けての端末内生成で強制終了を検知:', r);
       showToast('前回、続けて生成した時に強制終了しました。アプリを開き直した直後の生成は安定します');
+    } else if(Date.now() - (r.t || 0) < 3 * 3600e3 && !r.safe && !localCrashCount() && !lsGet(LOCAL_RETRY_KEY)) {
+      // 最初の強制終了 → 軽い設定には落とさず、同じ設定でもう一度（2回続けて落ちたら従来どおり軽い設定へ）
+      lsSet(LOCAL_RETRY_KEY, '1');
+      console.warn('[LGO] 端末内生成で強制終了を検知（同じ設定で再挑戦）:', r);
+      showToast('前回、端末内生成が途中で強制終了しました。落ちたあとの生成は安定しやすいので、同じ設定でもう一度お試しください');
     } else if(Date.now() - (r.t || 0) < 3 * 3600e3) {
+      lsSet(LOCAL_RETRY_KEY, null);
       const n = localCrashCount() + 1;
       lsSet(LOCAL_CRASH_KEY, String(n));
       const at = LOCAL_PHASE_LABEL[r.phase] || r.phase || '?';

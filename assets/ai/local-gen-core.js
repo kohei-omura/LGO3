@@ -453,6 +453,19 @@
       return x;
     };
     const tilesOf = (xw, xh) => tilePos(xw, uw, 8).length * tilePos(xh, uh, 8).length;
+    // 下準備（o.warmup = {w,h} px）: 本番より小さい大きさで描画部品を1回だけ動かし、GPU の計算部品（シェーダー）を先に作らせる。
+    //   実機（17a）では、アプリや診断ページを開いた直後の最初の 448×640 だけが描画の1工程目で強制終了し、
+    //   落ちて読み込み直したあとの 448×640 は続けて成功した（シェーダーの作成と大きな計算が重なる時が山とみる）
+    if (o.warmup && lw * lh > (o.warmup.w / 8) * (o.warmup.h / 8)) {
+      const ww = o.warmup.w / 8, wh = o.warmup.h / 8, wpg = (ph, f) => prog('warm:' + ph, f);
+      await withSession(env, 'unet', { batch: 1, h: wh, w: ww }, async s => {
+        await s.run({ sample: fromF32(ort, dt, gaussian(4 * ww * wh, 7), [1, 4, wh, ww]),
+                      timestep: fromF32(ort, dt, new Float32Array([999]), []), encoder_hidden_states: ctxUncond });
+      }, wpg);
+      if (env.settle) await env.settle('tile');
+      if (env.log) env.log(`下準備: 描画部品を ${o.warmup.w}×${o.warmup.h} で1回実行`);
+      check();
+    }
     const tUnet = Date.now();
     let lat = await unet(async s => {
       if (!T) return denoise(s, gaussian(n, seed), lw, lh, makeScheduler(steps), 0, ctxCond, f => prog('unet', f));
@@ -559,7 +572,7 @@
     };
   }
 
-  const VERSION = '2026-11-17a';
+  const VERSION = '2026-11-17b';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
                 _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles, _detectFace: detectFace, _tilePos: tilePos };   // _ 付きは診断用
   root.LocalGenCore = api;

@@ -476,7 +476,7 @@
     </div>
   </div>
 </div>
-<script src="assets/ai/local-gen.js?v=2026-11-17e"></script>
+<script src="assets/ai/local-gen.js?v=2026-11-17f"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -3622,37 +3622,58 @@ function localOwnPage() {
   if(o === '1' || o === '0') return o === '1';
   return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
-function localResultTake() {
+function localResultDb(mode, fn) {
   return new Promise(res => {
     let o; try { o = indexedDB.open('lg_local_result', 1); } catch(e) { res(null); return; }
     o.onupgradeneeded = () => o.result.createObjectStore('r');
     o.onerror = () => res(null);
     o.onsuccess = () => {
-      const db = o.result, tx = db.transaction('r', 'readwrite'), st = tx.objectStore('r'), g = st.get('last');
-      let val = null;
-      g.onsuccess = () => { val = g.result || null; st.delete('last'); };
-      tx.oncomplete = () => { db.close(); res(val); };
-      tx.onerror = () => { db.close(); res(null); };
+      const db = o.result; let val = null;
+      try {
+        const tx = db.transaction('r', mode), rq = fn(tx.objectStore('r'));
+        if(rq) rq.onsuccess = () => { val = rq.result || null; };
+        tx.oncomplete = () => { db.close(); res(val); };
+        tx.onerror = tx.onabort = () => { db.close(); res(null); };
+      } catch(e) { db.close(); res(null); }
     };
   });
 }
+// 生成記録（lg_local_log）に1行足す（アプリに戻ってからの経過。診断ページで見られる）
+function localLogAppend(text) {
+  try {
+    const g = JSON.parse(lsGet('lg_local_log') || 'null');
+    if(!g || !Array.isArray(g.lines)) return;
+    g.lines.push(((Date.now() - g.t) / 1000).toFixed(1) + '秒 ' + text);
+    lsSet('lg_local_log', JSON.stringify(g));
+  } catch(e) {}
+}
 // 専用画面から戻った時: 結果があれば通常の生成と同じ流れ（finishWithImage）で表示する。表示したら true
+//   結果は画面に出るまで消さない（表示の途中で落ちても、次に開いた時にもう一度表示する。2回まで）
 async function resumeLocalResult() {
   const raw = lsGet(LOCAL_RES_KEY);
   if(!raw) return false;
-  lsSet(LOCAL_RES_KEY, null);
   let r = null; try { r = JSON.parse(raw); } catch(e) {}
-  if(!r || Date.now() - (r.t || 0) > 30 * 60e3) return false;
+  const drop = () => { lsSet(LOCAL_RES_KEY, null); lsSet('lg_local_req_done', null); localResultDb('readwrite', st => { st.delete('last'); }); };
+  if(!r || Date.now() - (r.t || 0) > 30 * 60e3) { drop(); return false; }
   if(!r.ok) {
-    lsSet('lg_local_req_done', null);
-    localRunClear(false);
+    drop(); localRunClear(false);
     showToast(r.aborted ? '端末内生成を中止しました' : '端末内生成に失敗しました: ' + (r.error || ''));
     return false;
   }
-  const v = await localResultTake();
+  r.tries = (r.tries || 0) + 1;
+  if(r.tries > 2) { localLogAppend('結果の表示を2回試して失敗 → 破棄'); drop(); showToast('端末内の生成結果を表示できませんでした'); return false; }
+  lsSet(LOCAL_RES_KEY, JSON.stringify(r));
+  localLogAppend(`アプリに戻った（結果の読み込み ${r.tries}回目）`);
+  const v = await localResultDb('readonly', st => st.get('last'));
   let q = null; try { q = JSON.parse(lsGet('lg_local_req_done') || 'null'); } catch(e) {}
-  lsSet('lg_local_req_done', null);
-  if(!v || !v.blob || !q || !q.promptData) return false;
+  const toBlob = p => p && p.buf ? new Blob([p.buf], { type: p.type || 'image/png' }) : (p instanceof Blob ? p : null);
+  const blob = v ? toBlob(v.img || v.blob) : null;
+  if(!blob || !blob.size || !q || !q.promptData) {
+    localLogAppend('結果を読み込めない: ' + (!v ? '保存データなし' : !blob || !blob.size ? '画像が空' : '依頼の情報なし'));
+    drop(); showToast('端末内の生成結果を読み込めませんでした');
+    return false;
+  }
+  localLogAppend(`結果を読み込み（${Math.round(blob.size / 1024)}KB${v.detail ? '・顔あり' : ''}）`);
   localRunClear(true); _heavyEndAt = Date.now();
   const promptData = q.promptData;
   const loading = document.getElementById('loadingOverlay'), img = document.getElementById('mainImg');
@@ -3666,9 +3687,16 @@ async function resumeLocalResult() {
   if(hint) hint.textContent = '✦ 端末内の生成結果を表示中…';
   if(promptData.prompt) document.getElementById('promptText').textContent = promptData.prompt;
   const token = ++GEN_TOKEN;
-  const u = URL.createObjectURL(v.blob);
-  setFaceDetail(u, v.detail);
+  const u = URL.createObjectURL(blob);
+  const dblob = v.detail ? toBlob(v.detail.img || v.detail.blob) : null;
+  setFaceDetail(u, dblob ? { blob: dblob, rect: v.detail.rect, width: v.detail.width, height: v.detail.height } : null);
   finishWithImage(u, '端末内 ' + (v.label || ''), promptData, token);
+  // 画面に出たら片付ける（出る前に落ちたら、次に開いた時にもう一度）
+  const t0 = Date.now(), tm = setInterval(() => {
+    const shown = img && img.classList.contains('loaded');
+    if(shown) { clearInterval(tm); localLogAppend('画像を表示'); drop(); }
+    else if(Date.now() - t0 > 60000) { clearInterval(tm); localLogAppend('60秒たっても表示されない'); }
+  }, 300);
   return true;
 }
 function checkLocalCrash() {

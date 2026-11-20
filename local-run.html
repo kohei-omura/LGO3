@@ -38,7 +38,7 @@
 </div>
 <script>
 'use strict';
-const AV = '2026-11-17e';
+const AV = '2026-11-17f';
 const REQ = 'lg_local_req', RES = 'lg_local_res', RUN = 'lg_local_run', LOG = 'lg_local_log';
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
@@ -109,7 +109,10 @@ function loadScript(src) {
       },
     });
     setStage('保存中…');
-    await idbPut({ blob: r.blob, detail: r.detail, label: r.label, width: r.width, height: r.height });
+    // 画像は中身（ArrayBuffer）で保存する。iPhone の Safari では、IndexedDB に Blob のまま置くと読み出しに失敗することがある
+    const pack = async b => ({ buf: await b.arrayBuffer(), type: b.type || 'image/png' });
+    await idbPut({ img: await pack(r.blob), label: r.label, width: r.width, height: r.height,
+      detail: r.detail && r.detail.blob ? { img: await pack(r.detail.blob), rect: r.detail.rect, width: r.detail.width, height: r.detail.height } : null });
     lsSet(RUN, null);
     gl(`完了 ${r.width}×${r.height}` + (r.detail ? '・顔の描き直しあり' : '') + '・アプリに戻る');
     lsSet(RES, JSON.stringify({ t: Date.now(), ok: true }));

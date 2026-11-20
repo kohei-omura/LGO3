@@ -221,7 +221,7 @@ function makeEnv(m) {
     },
     sessionOptions: (comp, d) => {
       const ov = comp === 'text_encoder' ? { batch_size: d.batch, sequence_length: 77 }
-               : comp === 'unet'         ? { batch_size: d.batch, height: d.h, width: d.w, sequence_length: 77 }
+               : comp === 'unet'         ? { batch_size: d.batch, height: d.h, width: d.w, sequence_length: d.seq || 77 }
                :                           { batch_size: d.batch, latent_height: d.h, latent_width: d.w };
       return Object.assign({ executionProviders: [epOf(comp)], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 }, extraOpts);
     },

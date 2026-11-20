@@ -145,6 +145,17 @@
       while (ids.length < MAX_LEN) ids.push(EOS);
       return { ids, used: body.length, truncated: this.tokenize(text).length > MAX_LEN - 2 };
     }
+    // 長い指示文を 75 語分ずつに分ける（最大 max 個。各 77 = 開始＋75＋終了）。空なら1個
+    encodeChunks(text, max) {
+      const all = this.tokenize(text), per = MAX_LEN - 2, k = Math.max(1, Math.min(max || 1, Math.ceil(all.length / per)));
+      const chunks = [];
+      for (let c = 0; c < k; c++) {
+        const ids = [BOS, ...all.slice(c * per, (c + 1) * per), EOS];
+        while (ids.length < MAX_LEN) ids.push(EOS);
+        chunks.push(ids);
+      }
+      return { chunks, used: Math.min(all.length, k * per), truncated: all.length > k * per };
+    }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -363,33 +374,39 @@
 
     // ① 文字 → トークン
     if (!env._tok) { const t = await env.loadTokenizer(); env._tok = new CLIPTokenizer(t.vocab, t.merges); }
-    const neg = env._tok.encode(o.negative || ''), pos = env._tok.encode(o.prompt || '');
+    // 指示文は 75 語分ずつ最大 o.chunks 個まで読む（既定 1）。各かたまりを文章部品に通して横につなぐ
+    //   （端末内の指示文は運気の要素を後ろに並べるので、1個だと場所・タロット・月などが切り捨てられていた）
+    const NC = Math.max(1, Math.min(3, o.chunks || 1));
+    const negC = env._tok.encodeChunks(o.negative || '', NC), posC = env._tok.encodeChunks(o.prompt || '', NC);
+    const pos = { used: posC.used, truncated: posC.truncated };
     const face = o.face && env.loadFaceModel ? o.face : null;          // 顔の描き直し（下記 refineFace）
-    const fpos = face ? env._tok.encode(face.prompt || o.prompt || '') : null;
+    const faceC = face ? env._tok.encodeChunks(face.prompt || o.prompt || '', NC) : null;
+    const K = Math.max(negC.chunks.length, posC.chunks.length, faceC ? faceC.chunks.length : 1), L = K * MAX_LEN;
+    const empty = env._tok.encode('').ids;
     check();
 
     // ② テキストエンコーダ（無条件・条件をまとめて1回で）
     prog('text', 0);
-    // 文章部品は常に batch 2（第15回まで実機で成功していた形）。顔用の指示文は同じセッションでもう1回実行する
+    // 文章部品は常に batch 2（第15回まで実機で成功していた形）。かたまりごと・顔用は同じセッションで続けて実行する
     //   （16a〜16c は batch 3 にしたあと、448×640 の描画1工程目で3回続けて強制終了したため戻す）
-    const ids = new BigInt64Array(2 * MAX_LEN);
-    neg.ids.forEach((v, i) => { ids[i] = BigInt(v); });
-    pos.ids.forEach((v, i) => { ids[MAX_LEN + i] = BigInt(v); });
     const hs = MAX_LEN * 768;
-    let fhid = null;
-    const hid = await withSession(env, 'text_encoder', { batch: 2 }, async s => {
-      const h = toF32((await s.run({ input_ids: new ort.Tensor('int64', ids, [2, MAX_LEN]) })).last_hidden_state.data);
-      if (face) {
-        const fids = new BigInt64Array(2 * MAX_LEN);
-        fpos.ids.forEach((v, i) => { fids[i] = BigInt(v); fids[MAX_LEN + i] = BigInt(v); });
-        fhid = toF32((await s.run({ input_ids: new ort.Tensor('int64', fids, [2, MAX_LEN]) })).last_hidden_state.data).slice(0, hs);
+    const hUn = new Float32Array(K * hs), hCo = new Float32Array(K * hs), hFa = face ? new Float32Array(K * hs) : null;
+    await withSession(env, 'text_encoder', { batch: 2 }, async s => {
+      const pair = async (a, b) => {
+        const ids = new BigInt64Array(2 * MAX_LEN);
+        a.forEach((v, i) => { ids[i] = BigInt(v); }); b.forEach((v, i) => { ids[MAX_LEN + i] = BigInt(v); });
+        return toF32((await s.run({ input_ids: new ort.Tensor('int64', ids, [2, MAX_LEN]) })).last_hidden_state.data);
+      };
+      for (let c = 0; c < K; c++) {
+        const h = await pair(negC.chunks[c] || empty, posC.chunks[c] || empty);
+        hUn.set(h.subarray(0, hs), c * hs); hCo.set(h.subarray(hs, 2 * hs), c * hs);
+        if (face) { const f = await pair(faceC.chunks[c] || empty, empty); hFa.set(f.subarray(0, hs), c * hs); }
       }
-      return h;
     }, prog);
-    const ctxUncond = fromF32(ort, dt, hid.subarray(0, hs), [1, MAX_LEN, 768]);
-    const ctxCond   = fromF32(ort, dt, hid.subarray(hs, 2 * hs), [1, MAX_LEN, 768]);
-    const ctxFace   = face ? fromF32(ort, dt, fhid, [1, MAX_LEN, 768]) : null;
-    fhid = null;
+    const ctxUncond = fromF32(ort, dt, hUn, [1, L, 768]);
+    const ctxCond   = fromF32(ort, dt, hCo, [1, L, 768]);
+    const ctxFace   = face ? fromF32(ort, dt, hFa, [1, L, 768]) : null;
+    if (env.log && K > 1) env.log(`指示文 ${pos.used}語分を ${K}つに分けて読み込み` + (pos.truncated ? '（残りは切り捨て）' : ''));
     prog('text', 1); check();
 
     // ③ UNet で少しずつノイズを取り除く（CFG は1枚ずつ2回推論＝メモリ節約）
@@ -404,7 +421,7 @@
     // 部品を開いて最初の2回の推論のあとは、少し待ってメモリを返させる（warm）。
     //   実機の強制終了は3回とも「描画の1工程目」＝中間バッファを初めて作る時で、読み込み直後の一時メモリと重なる
     let warm = 0;
-    const unet = (fn, pg) => { warm = 2; return withSession(env, 'unet', { batch: 1, h: uh, w: uw }, fn, pg); };
+    const unet = (fn, pg) => { warm = 2; return withSession(env, 'unet', { batch: 1, h: uh, w: uw, seq: L }, fn, pg); };
     const rest = async () => { if (warm > 0 && env.settle) { warm--; await env.settle('tile'); } else if (env.tick) await env.tick(); };
     // 大きさ xw×xh の latent 全体のノイズ予測（CFG 済み）。xw×xh が部品より大きければタイルに分ける
     const epsOf = async (s, x, xw, xh, ts, ctx, onTile) => {
@@ -458,7 +475,7 @@
     //   落ちて読み込み直したあとの 448×640 は続けて成功した（シェーダーの作成と大きな計算が重なる時が山とみる）
     if (o.warmup && lw * lh > (o.warmup.w / 8) * (o.warmup.h / 8)) {
       const ww = o.warmup.w / 8, wh = o.warmup.h / 8, wpg = (ph, f) => prog('warm:' + ph, f);
-      await withSession(env, 'unet', { batch: 1, h: wh, w: ww }, async s => {
+      await withSession(env, 'unet', { batch: 1, h: wh, w: ww, seq: L }, async s => {
         await s.run({ sample: fromF32(ort, dt, gaussian(4 * ww * wh, 7), [1, 4, wh, ww]),
                       timestep: fromF32(ort, dt, new Float32Array([999]), []), encoder_hidden_states: ctxUncond });
       }, wpg);

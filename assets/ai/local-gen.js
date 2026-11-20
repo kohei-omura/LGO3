@@ -78,6 +78,8 @@
                 //   顔が小さい時（2倍以上に拡大できる時）だけ描き直し、結果の顔の位置・大きさも確かめる（計算部品側）
                 // 下準備: 本番の描画の前に、この大きさで描画部品を1回動かしてシェーダーを先に作る（開いた直後の強制終了対策）
                 warmup: { w: 128, h: 192 },
+                // 指示文を 75 語分ずつ何個まで読むか（2 = 150 語分。運気の要素が後ろまで入る）
+                promptChunks: 2,
                 face: { strength: 0.5, steps: 16, expand: 2.2, maxZoom: 4, minZoom: 2 },
                 faceTiled: { strength: 0.5, steps: 16, expand: 1.8, maxZoom: 4, minZoom: 1.4 },   // タイル方式の時（顔は tile の大きさ1枚で描く）
                 faceModel: 'models/yunet/face_detection_yunet_2023mar.onnx',
@@ -231,7 +233,7 @@
       },
       sessionOptions: (comp, d) => {
         const ov = comp === 'text_encoder' ? { batch_size: d.batch, sequence_length: 77 }
-                 : comp === 'unet'         ? { batch_size: d.batch, height: d.h, width: d.w, sequence_length: 77 }
+                 : comp === 'unet'         ? { batch_size: d.batch, height: d.h, width: d.w, sequence_length: d.seq || 77 }
                  :                           { batch_size: d.batch, latent_height: d.h, latent_width: d.w };
         return { executionProviders: [epOf(comp)], graphOptimizationLevel: 'all', freeDimensionOverrides: ov, logSeverityLevel: 3 };
       },
@@ -287,7 +289,7 @@
         ep: cfg.ep, epOptions: cfg.epOptions, epFor: cfg.epFor, stream: cfg.stream, uploadMode: cfg.uploadMode, keepAlive: cfg.keepAlive, pace: cfg.pace, settle: cfg.settle, vaeMaxArea: cfg.vaeMaxArea, debug: !!o.onLog,
         faceModelUrl: o.face ? abs(cfg.faceModel) : null,
         opts: { prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance, width: size.w, height: size.h,
-                tile: cfg.tileOn ? cfg.tile : null, hires: cfg.hires, warmup: cfg.warmup,
+                tile: cfg.tileOn ? cfg.tile : null, hires: cfg.hires, warmup: cfg.warmup, chunks: cfg.promptChunks,
                 face: o.face ? Object.assign({}, cfg.tileOn ? cfg.faceTiled : cfg.face, o.face) : null } }, extra || {}));
     });
   }
@@ -317,7 +319,7 @@
     if (!useW) await loadOrt();
     const run = size => useW ? runInWorker(id, o, size, steps) : LocalGenCore.generate(makeEnv(id), {
       prompt: o.prompt, negative: o.negative, seed: o.seed, steps, guidance: o.guidance,
-      width: size.w, height: size.h, tile: cfg.tileOn ? cfg.tile : null, hires: cfg.hires, warmup: cfg.warmup, signal: o.signal, onProgress: o.onProgress });
+      width: size.w, height: size.h, tile: cfg.tileOn ? cfg.tile : null, hires: cfg.hires, warmup: cfg.warmup, chunks: cfg.promptChunks, signal: o.signal, onProgress: o.onProgress });
     let r;
     try { r = await run(plan); }
     catch (e) {

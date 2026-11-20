@@ -38,7 +38,7 @@
 </div>
 <script>
 'use strict';
-const AV = '2026-11-17f';
+const AV = '2026-11-21a';
 const REQ = 'lg_local_req', RES = 'lg_local_res', RUN = 'lg_local_run', LOG = 'lg_local_log';
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
@@ -114,13 +114,26 @@ function loadScript(src) {
     await idbPut({ img: await pack(r.blob), label: r.label, width: r.width, height: r.height,
       detail: r.detail && r.detail.blob ? { img: await pack(r.detail.blob), rect: r.detail.rect, width: r.detail.width, height: r.detail.height } : null });
     lsSet(RUN, null);
-    gl(`完了 ${r.width}×${r.height}` + (r.detail ? '・顔の描き直しあり' : '') + '・アプリに戻る');
     lsSet(RES, JSON.stringify({ t: Date.now(), ok: true }));
+    lsSet('lg_local_req_done', JSON.stringify(q));
+    // 顔が写っていない（頭が画面の外に切れた）時は、絵柄（シード）を変えて1回だけ描き直す。
+    //   この結果は保存済みなので、描き直しの途中で落ちてもアプリはこの画像を表示する
+    if (q.face && r.faceStatus === 'none' && !q.retried && !ac.signal.aborted) {
+      gl('完了したが顔が写っていない → 絵柄を変えてもう一度');
+      const q2 = Object.assign({}, q, { t: Date.now(), seed: ((q.seed || 1) + 7919) % 2147483647, retried: true });
+      lsSet(REQ, JSON.stringify(q2));
+      setStage('顔が写っていないため、絵柄を変えてもう一度描いています…');
+      setTimeout(() => location.reload(), 300);
+      return;
+    }
+    gl(`完了 ${r.width}×${r.height}` + (r.detail ? '・顔の描き直しあり' : '') + (q.retried ? '・描き直し後' : '') + '・アプリに戻る');
   } catch (e) {
     lsSet(RUN, null);
     const aborted = ac.signal.aborted || (e && e.name === 'AbortError');
     gl(aborted ? '中止' : 'エラー: ' + String(e && e.message || e).slice(0, 300));
-    lsSet(RES, JSON.stringify({ t: Date.now(), ok: false, aborted, error: String(e && e.message || e).slice(0, 200) }));
+    // 描き直し（2回目）で失敗・中止した時は、保存済みの1回目の画像をそのまま表示する
+    if (q.retried && (JSON.parse(lsGet(RES) || '{}') || {}).ok) gl('1回目の画像を使う');
+    else lsSet(RES, JSON.stringify({ t: Date.now(), ok: false, aborted, error: String(e && e.message || e).slice(0, 200) }));
   }
   back();
 })();

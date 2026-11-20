@@ -45,7 +45,7 @@
   const ORT_Q = '?v=lgo3';   // 実行部品（LGO3 パッチ入り）を修正したら上げる。古いキャッシュを使わせない
   // 本アプリの部品の版。URL に ?v= を付けて、古い保存データ（Service Worker・ブラウザのキャッシュ）を使わせない。
   //   変えたら index.html / diag-gen.html の local-gen.js?v= と sw.js の ASSETS もそろえる
-  const AV = '2026-11-17f', VQ = '?v=' + AV;
+  const AV = '2026-11-21a', VQ = '?v=' + AV;
   const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
                 // GPU バッファは同じ大きさのものを使い回す（simple）。毎回作って捨てる方式（lazyRelease）だと、
                 //   捨てた分が実際に返るまで時間差があり、iPhone では工程を重ねるうちに上限（2048MB）を超えた。
@@ -330,7 +330,7 @@
     // detail: 描き直した顔（rect は元画像上の位置。アプリ側で拡大後の画像に貼る）
     const detail = r.detail ? { blob: await toBlob(r.detail), rect: r.detail.rect, width: r.width, height: r.height } : null;
     return { blob: await toBlob(r), width: r.width, height: r.height, tier: id, label: cfg.tiers[id].label, detail,
-             msPerStep: r.msPerStep, ms: r.ms, truncated: r.truncated, via: useW ? 'worker' : 'main' };
+             msPerStep: r.msPerStep, ms: r.ms, truncated: r.truncated, faceStatus: r.faceStatus, via: useW ? 'worker' : 'main' };
   }
 
   // オフラインで初めて生成する時に備え、実行部品を先に取得しておく（Service Worker が保存する）

@@ -2351,9 +2351,10 @@ async function aiUpscaleCanvas(srcEl, plan, opt) {
 }
 
 // 写真調の仕上げ。Real-ESRGAN だけだと肌や背景が油絵のように塗りつぶされ、縞も出る。
-//   元画像を滑らかに拡大したものを 45% 混ぜて質感を戻し、ごく弱い粒子（輝度のみ）を足す。
+//   元画像を滑らかに拡大したものを 65% 混ぜて質感を戻し、ごく弱い粒子（輝度のみ）を足す。
 //   PC で比較し、AI拡大のみ／AIなし（目元がギザギザ）より自然だった方式。
-const SR_REAL_MIX = 0.45, SR_REAL_GRAIN = 3;
+//   45% だと竹・草の葉の輪郭が線画のように浮いた（実機 21b）。65% で線が目立たなくなり、80% だとぼやける（PC で比較）
+const SR_REAL_MIX = 0.65, SR_REAL_GRAIN = 3;
 function srFinish(cv, srcEl, plan) {
   if(plan.key !== 'general4x') return cv;
   try {

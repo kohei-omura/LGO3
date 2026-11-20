@@ -476,7 +476,7 @@
     </div>
   </div>
 </div>
-<script src="assets/ai/local-gen.js?v=2026-11-17d"></script>
+<script src="assets/ai/local-gen.js?v=2026-11-17e"></script>
 <script>
 // ════════════════════════════════════════
 //  DIVINATION ENGINE
@@ -3004,6 +3004,19 @@ function generateImage(promptData, seed) {
     // AI超解像が溜めた GPU メモリを先に返す（返るまで少し待つ）
     const freed = AI_SR.release();
     if(freed > 0) gl(`AI超解像のGPUメモリを解放 ${Math.round(freed / 1048576)}MB`);
+    if(localOwnPage()) {
+      // iPhone / iPad: 生成は専用の軽い画面（local-run.html）で行い、終わったらアプリに戻って表示する（resumeLocalResult）
+      //   実機: 軽い診断ページでは 448×640＋顔の描き直しが3回とも成功、アプリの画面では描画の1工程目で強制終了
+      gl('生成専用の画面に切り替え');
+      lsSet(LOCAL_RES_KEY, null);
+      lsSet(LOCAL_REQ_KEY, JSON.stringify({ t: Date.now(), prompt: lp,
+        negative: (fullBody ? promptData.localNegative : promptData.localNegativeNoFace || promptData.localNegative) || promptData.negative,
+        seed, quality: getImgQuality(), tier: safe.tier, size: safe.size, safe: !!tag,
+        face: useFace ? { prompt: promptData.localFacePrompt } : null, promptData }));
+      setStage('📴 端末内生成の画面に切り替えています…' + tag);
+      setTimeout(() => location.replace('local-run.html'), 50);
+      return;
+    }
     // 続けて生成する時は、前の処理のメモリが返るのを待つ（最大 8 秒。開いて最初の生成は待たない）
     const since = _heavyEndAt ? Date.now() - _heavyEndAt : Infinity;
     const waitMs = _localRunCount > 1 || _heavyEndAt ? Math.max(freed > 0 ? 1500 : 0, Math.min(LOCAL_REPEAT_WAIT_MS, LOCAL_REPEAT_WAIT_MS - since)) : 0;
@@ -3601,6 +3614,63 @@ function setLocalFace(on) {
 }
 const LOCAL_PHASE_LABEL = { start: '準備', 'text_encoder:load': '文章部品の読込', 'text_encoder:run': '文章の解析', text: '文章の解析',
   'warm:unet:load': '描画の下準備', 'warm:unet:run': '描画の下準備', 'unet:load': '描画部品の読込', 'unet:run': '描画（1工程目）', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ', vae: '仕上げ', face: '顔の描き直し' };
+// ── 端末内生成の専用画面（local-run.html）との受け渡し ──
+const LOCAL_REQ_KEY = 'lg_local_req', LOCAL_RES_KEY = 'lg_local_res';
+// iPhone / iPad は専用画面で生成する（lg_local_ownpage = '1' / '0' で切り替え可能。テスト用）
+function localOwnPage() {
+  const o = lsGet('lg_local_ownpage');
+  if(o === '1' || o === '0') return o === '1';
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function localResultTake() {
+  return new Promise(res => {
+    let o; try { o = indexedDB.open('lg_local_result', 1); } catch(e) { res(null); return; }
+    o.onupgradeneeded = () => o.result.createObjectStore('r');
+    o.onerror = () => res(null);
+    o.onsuccess = () => {
+      const db = o.result, tx = db.transaction('r', 'readwrite'), st = tx.objectStore('r'), g = st.get('last');
+      let val = null;
+      g.onsuccess = () => { val = g.result || null; st.delete('last'); };
+      tx.oncomplete = () => { db.close(); res(val); };
+      tx.onerror = () => { db.close(); res(null); };
+    };
+  });
+}
+// 専用画面から戻った時: 結果があれば通常の生成と同じ流れ（finishWithImage）で表示する。表示したら true
+async function resumeLocalResult() {
+  const raw = lsGet(LOCAL_RES_KEY);
+  if(!raw) return false;
+  lsSet(LOCAL_RES_KEY, null);
+  let r = null; try { r = JSON.parse(raw); } catch(e) {}
+  if(!r || Date.now() - (r.t || 0) > 30 * 60e3) return false;
+  if(!r.ok) {
+    lsSet('lg_local_req_done', null);
+    localRunClear(false);
+    showToast(r.aborted ? '端末内生成を中止しました' : '端末内生成に失敗しました: ' + (r.error || ''));
+    return false;
+  }
+  const v = await localResultTake();
+  let q = null; try { q = JSON.parse(lsGet('lg_local_req_done') || 'null'); } catch(e) {}
+  lsSet('lg_local_req_done', null);
+  if(!v || !v.blob || !q || !q.promptData) return false;
+  localRunClear(true); _heavyEndAt = Date.now();
+  const promptData = q.promptData;
+  const loading = document.getElementById('loadingOverlay'), img = document.getElementById('mainImg');
+  const regenBtn = document.getElementById('regenBtn'), hint = document.getElementById('loadingPromptHint');
+  stopAll(); resetHordeJob(); _clearVariations();
+  _lastSeed = q.seed; currentPromptData = promptData;
+  if(loading) loading.classList.remove('hidden');
+  if(img) { img.classList.remove('loaded'); img.removeAttribute('src'); img.onload = null; img.onerror = null; }
+  setActionsEnabled(false); if(regenBtn) regenBtn.disabled = true;
+  isGenerating = true;
+  if(hint) hint.textContent = '✦ 端末内の生成結果を表示中…';
+  if(promptData.prompt) document.getElementById('promptText').textContent = promptData.prompt;
+  const token = ++GEN_TOKEN;
+  const u = URL.createObjectURL(v.blob);
+  setFaceDetail(u, v.detail);
+  finishWithImage(u, '端末内 ' + (v.label || ''), promptData, token);
+  return true;
+}
 function checkLocalCrash() {
   // アプリの版が変わったら安全設定を解く（対策を入れた新しい版は、通常の設定から試す）
   const ver = (typeof LOCAL_GEN !== 'undefined' && LOCAL_GEN.version) || '';
@@ -3811,6 +3881,7 @@ async function init() {
   try {
     const all = await loadHistory();
     // ① 中断された生成があれば最優先で回収（再起動/復帰対応）
+    if(await resumeLocalResult()) return;   // 端末内生成の専用画面から戻った
     if(resumePendingGeneration()) return;
     const todayEntry = all.find(h => h.date === todayKey && h.mode === 'oracle');
     if(!todayEntry || !todayEntry.imageData) {

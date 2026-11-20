@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0b1a">
+<title>📴 端末内で生成中 — 運気の女神</title>
+<!--
+  端末内生成の専用画面（iPhone / iPad）。
+  実機テスト第19〜20回: 軽い診断ページでは 448×640＋顔の描き直しが3回とも成功したが、アプリの画面で生成すると
+  描画の1工程目で強制終了した。アプリの画面が使うメモリ（表示中の画像・効果など）と重なるとみて、
+  生成だけをこの軽い画面で行い、結果を保存してアプリに戻る（アプリ側は index.html の resumeLocalResult で表示）。
+  受け渡し: localStorage lg_local_req（依頼）→ IndexedDB lg_local_result（画像）＋ localStorage lg_local_res（結果）
+-->
+<style>
+  :root { --ink:#0d0b1a; --card:#1a1730; --border:rgba(255,255,255,.12); --gold:#e8c96a; --violet:#a78bfa; --text:#f0eaff; --muted:#8b80ac; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ink); color: var(--text); font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif; line-height: 1.6; -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: calc(48px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom)); text-align: center; }
+  h1 { font-size: 1.2rem; color: var(--gold); margin-bottom: 18px; }
+  #stage { font-size: .95rem; min-height: 1.6em; }
+  #sec { font-size: .8rem; color: var(--muted); margin-top: 4px; }
+  .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); margin: 16px 0; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--violet); }
+  .lead { font-size: .78rem; color: var(--muted); margin: 18px 0; }
+  button { padding: 11px 18px; border-radius: 12px; border: 1px solid var(--border); background: none; color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📴 端末内で生成中</h1>
+  <p id="stage">準備中…</p>
+  <p id="sec"></p>
+  <div class="bar"><i id="bar"></i></div>
+  <p class="lead">メモリを空けるため、生成の間だけこの画面に切り替えています。<br>終わると自動でアプリに戻ります。画面はつけたままにしてください。</p>
+  <button id="cancelBtn">中止してアプリに戻る</button>
+</div>
+<script>
+'use strict';
+const AV = '2026-11-17e';
+const REQ = 'lg_local_req', RES = 'lg_local_res', RUN = 'lg_local_run', LOG = 'lg_local_log';
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
+const back = () => location.replace('index.html');
+const $ = id => document.getElementById(id);
+function idbPut(val) {
+  return new Promise((res, rej) => {
+    const o = indexedDB.open('lg_local_result', 1);
+    o.onupgradeneeded = () => o.result.createObjectStore('r');
+    o.onerror = () => rej(o.error);
+    o.onsuccess = () => {
+      const db = o.result, tx = db.transaction('r', 'readwrite');
+      tx.objectStore('r').put(val, 'last');
+      tx.oncomplete = () => { db.close(); res(); };
+      tx.onerror = () => { db.close(); rej(tx.error); };
+    };
+  });
+}
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('部品を読み込めません')); document.head.appendChild(s); });
+}
+(async () => {
+  const raw = lsGet(REQ);
+  // 依頼が無い（強制終了のあとの読み込み直しなど）→ アプリに戻り、アプリ側が強制終了を判定する
+  if (!raw) { back(); return; }
+  lsSet(REQ, null);                    // 読み込み直しで二重に始めない
+  lsSet('lg_local_req_done', raw);     // アプリ側が表示に使う（指示文・シードなど）
+  let q = null; try { q = JSON.parse(raw); } catch (e) {}
+  if (!q || Date.now() - (q.t || 0) > 10 * 60e3) { back(); return; }
+  let glog = null; try { glog = JSON.parse(lsGet(LOG) || 'null'); } catch (e) {}
+  if (!glog || !Array.isArray(glog.lines)) glog = { t: Date.now(), lines: [] };
+  const gl = text => { glog.lines.push(((Date.now() - glog.t) / 1000).toFixed(1) + '秒 ' + text); if (glog.lines.length > 80) glog.lines.splice(10, 1); lsSet(LOG, JSON.stringify(glog)); };
+  let lastPh = '';
+  const mark = ph => lsSet(RUN, JSON.stringify({ t: Date.now(), phase: ph, safe: !!q.safe, repeat: false }));
+  const t0 = Date.now();
+  let stage = '準備中…';
+  const setStage = t => { stage = t; $('stage').textContent = t; };
+  setInterval(() => { $('sec').textContent = Math.round((Date.now() - t0) / 1000) + '秒'; }, 1000);
+  const ac = new AbortController();
+  $('cancelBtn').onclick = () => { ac.abort(); setStage('中止しています…'); };
+  mark('start');
+  gl('生成専用の画面で開始');
+  const tag = q.safe ? '（安全設定）' : '';
+  try {
+    await loadScript('assets/ai/local-gen.js?v=' + AV);
+    if (!window.LOCAL_GEN) throw new Error('部品を読み込めません');
+    // 自動テスト用（PC）: モデルの取得先や大きさを差し替える
+    const tc = (() => { try { return JSON.parse(lsGet('lg_local_testcfg') || 'null'); } catch (e) { return null; } })();
+    if (tc) { if (tc.cfg) LOCAL_GEN._configure(tc.cfg); if (tc.plan) for (const k in LOCAL_GEN.plans) Object.assign(LOCAL_GEN.plans[k], tc.plan); }
+    await LOCAL_GEN.status();           // 保存済みのモデルを確かめる（generate の前に必要）
+    const r = await LOCAL_GEN.generate({
+      prompt: q.prompt, negative: q.negative, seed: q.seed, quality: q.quality, signal: ac.signal,
+      tier: q.tier, size: q.size, face: q.face,
+      onLog: text => gl('［' + text + '］'),
+      onProgress: (ph, f) => {
+        gl(ph + (f > 0 ? ' ' + Math.round(f * 100) + '%' : ''));
+        const mk = /^face/.test(ph) ? 'face' : ph;
+        if (mk !== lastPh) { lastPh = mk; mark(mk); }      // どの段階で落ちたかを記録（アプリ側が読む）
+        setStage((/^face/.test(ph) ? `顔を描き直し中… ${ph === 'face' ? Math.round(f * 100) + '%' : ''}`
+                : /:load$/.test(ph) ? '部品を読み込み中…'
+                : ph === 'unet' ? `描画中… ${Math.round(f * 100)}%`
+                : ph === 'unet:run' ? '描画中… 0%'
+                : ph === 'text' || ph === 'text_encoder:run' ? '文章を解析中…'
+                : /^warm/.test(ph) ? '描画の下準備中…'
+                : '仕上げ中…') + tag);
+        if (ph === 'unet') $('bar').style.width = Math.round(f * 80) + '%';
+        else if (/^face/.test(ph)) $('bar').style.width = '90%';
+      },
+    });
+    setStage('保存中…');
+    await idbPut({ blob: r.blob, detail: r.detail, label: r.label, width: r.width, height: r.height });
+    lsSet(RUN, null);
+    gl(`完了 ${r.width}×${r.height}` + (r.detail ? '・顔の描き直しあり' : '') + '・アプリに戻る');
+    lsSet(RES, JSON.stringify({ t: Date.now(), ok: true }));
+  } catch (e) {
+    lsSet(RUN, null);
+    const aborted = ac.signal.aborted || (e && e.name === 'AbortError');
+    gl(aborted ? '中止' : 'エラー: ' + String(e && e.message || e).slice(0, 300));
+    lsSet(RES, JSON.stringify({ t: Date.now(), ok: false, aborted, error: String(e && e.message || e).slice(0, 200) }));
+  }
+  back();
+})();
+</script>
+</body>
+</html>

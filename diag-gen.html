@@ -107,13 +107,13 @@
      Dawn 計測: 2回目以降の実行で新しく作るバッファは 4個・約0MB（以前は1回 94MB・1513個）。捨てた分が返るまでの時間差に左右されなくなる
    - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128&pace=0&cap=96&vae=100&buf=lazyRelease（buf は GPU バッファの方式・pace=0 で待ち合わせなし・cap は余裕の測定の上限MB・vae は仕上げを分割する大きさ）
    ════════════════════════════════════════════════════════════ */
-const KEY = 'lgo_diag_gen_v12';
+const KEY = 'lgo_diag_gen_v13';
 const MB = 1048576;
 const Q = new URLSearchParams(location.search);
 const EP = Q.get('ep') || 'webgpu';
 const ROOT_DIR = 'lgo-localgen';
 const COMP = 'unet';
-const AV = '2026-11-17b';
+const AV = '2026-11-17c';
 // アプリ本体と同じ種類の指示文（全身の構図＋顔の描き直し）
 const PROMPT = 'RAW photo, wide shot, full body from head to toe, a beautiful 25 year old japanese woman standing facing the camera, front view, womanly curvy figure, long legs, wearing shoes, open eyes looking at viewer, sharp focus, fully clothed, long black hair, gentle smile, floral dress, flower garden',
   NEG = 'nude, nsfw, revealing, cleavage, child, teen, flat chest, closed eyes, from behind, back view, looking away, cropped, close-up, cut off legs, painting, illustration, cartoon, anime, deformed face, bad hands, bad anatomy, blurry, low quality',
@@ -143,7 +143,7 @@ const STEPS = [
   ...MEASURE.map((sz, i) => ({ id: 'm' + sz[0], title: `${6 + i}. メモリ測定: 描画 ${SZ(sz).join('×')} を2回のあと（測定後に落ちるのは正常）`,
     run: s => stepDiag(s, Object.assign(U(sz, 2), { headroom: { when: 'run', capMB: CAP } })), reloadBefore: true, measure: true })),
 ];
-let state = load() || { v: 12, inProgress: false, steps: {} };
+let state = load() || { v: 13, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -253,7 +253,11 @@ async function stepGen(s, size, nSteps, withFace) {
     onProgress: (ph, f) => {
       const k = ph + Math.round(f * 100); if (k === last) return; last = k;
       if (ph === 'unet' && f < 1 && Math.round(f * STEPS_N) % 6) return;   // 記録を間引く
-      if (/^face/.test(ph)) { if (ph === 'face' && (f === 0 || f >= 1)) mark(s, '顔の描き直し ' + (f >= 1 ? '完了' : '開始')); return; }
+      if (/^face/.test(ph)) {
+        if (ph === 'face' && (f === 0 || f >= 1)) mark(s, '顔の描き直し ' + (f >= 1 ? '完了' : '開始'));
+        else if (ph !== 'face' && f === 0) mark(s, '顔の描き直し: ' + (PH[ph.slice(5)] || ph.slice(5)));   // どの段階で落ちたか分かるように
+        return;
+      }
       mark(s, ph === 'unet' ? `描画 ${Math.round(f * 100)}%` : ph === 'vae' && f > 0 && f < 1 ? `仕上げ ${Math.round(f * 100)}%（分割）` : (PH[ph] || ph) + (ph === 'text' || ph === 'vae' ? (f >= 1 ? ' 完了' : ' 開始') : ''));
     } });
   if (r.width !== w) throw new Error(`メモリ不足で ${r.width}×${r.height} に縮小されました`);

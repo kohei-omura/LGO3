@@ -45,7 +45,7 @@
   const ORT_Q = '?v=lgo3';   // 実行部品（LGO3 パッチ入り）を修正したら上げる。古いキャッシュを使わせない
   // 本アプリの部品の版。URL に ?v= を付けて、古い保存データ（Service Worker・ブラウザのキャッシュ）を使わせない。
   //   変えたら index.html / diag-gen.html の local-gen.js?v= と sw.js の ASSETS もそろえる
-  const AV = '2026-11-17b', VQ = '?v=' + AV;
+  const AV = '2026-11-17c', VQ = '?v=' + AV;
   const cfg = { base: `https://huggingface.co/${REPO}/resolve/${REV}/`, ep: 'webgpu', tiers: TIERS, common: COMMON, assetBase: 'assets/ai/', useGraphs: true,
                 // GPU バッファは同じ大きさのものを使い回す（simple）。毎回作って捨てる方式（lazyRelease）だと、
                 //   捨てた分が実際に返るまで時間差があり、iPhone では工程を重ねるうちに上限（2048MB）を超えた。
@@ -62,7 +62,9 @@
                 //   small: 文章部品（小さい）とタイルごとの待ち時間
                 settle: { waitMs: 3000, small: 400, gc: true },
                 // 仕上げ（VAE）を分割する大きさ: 潜在表現の画素数がこれを超えたらタイルに分ける（1536 = 256×384 相当）
-                vaeMaxArea: 1536,
+                //   17c で 1536 → 768（タイル 32×44 → 24×32 の9枚）。仕上げ部品の作業用メモリは使い終わっても GPU 側に残るため、
+                //   そのあとの顔の描き直し（描画部品 448×640）と重なって落ちた（実機 17b: 3回中1回、顔の描き直しの最中）
+                vaeMaxArea: 768,
                 // タイル方式（計算部品の説明を参照）: 描画部品を常に tile の大きさで動かし、大きい画像は
                 //   ①tile の大きさで構図 → ②拡大して後半の工程をタイルでやり直す（hires）。メモリは 256×384 相当で済む。
                 //   ただし PC で確かめた画質が不十分なため既定では使わない（diag-gen.html?tile=1 で試せる）:

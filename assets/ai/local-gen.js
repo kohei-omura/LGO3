@@ -79,7 +79,8 @@
                 // 下準備: 本番の描画の前に、この大きさで描画部品を1回動かしてシェーダーを先に作る（開いた直後の強制終了対策）
                 warmup: { w: 128, h: 192 },
                 // 指示文を 75 語分ずつ何個まで読むか（2 = 150 語分。運気の要素が後ろまで入る）
-                promptChunks: 2,
+                //   iPhone / iPad は 1（21a で 2 にしたら、描画部品の読込中に2回続けて強制終了した。PC の測定では差は数MBで原因は未確定）
+                promptChunks: /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 1 : 2,
                 face: { strength: 0.5, steps: 16, expand: 2.2, maxZoom: 4, minZoom: 2 },
                 faceTiled: { strength: 0.5, steps: 16, expand: 1.8, maxZoom: 4, minZoom: 1.4 },   // タイル方式の時（顔は tile の大きさ1枚で描く）
                 faceModel: 'models/yunet/face_detection_yunet_2023mar.onnx',

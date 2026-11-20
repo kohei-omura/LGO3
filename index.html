@@ -1527,11 +1527,11 @@ function buildPrompt(div) {
   const localPose = seededPick(LOCAL_POSE, rndSeed, 3);                    // 目を閉じる・よそ見のポーズは使わない
   const localEyes = style === 'anime' ? eyes : 'natural makeup';
   const an = style === 'anime';
-  // 第22回: 決まり文句を短くし（52 → 約35語分）、年齢は「20代後半の大人の女性」で指定、幼さは禁止語の側で抑える。
-  //   最後にも全身の指定を足す（指示文は 75 語分ずつ2つに分けて読むので、後ろ半分でも全身を意識させる）
+  // 第22〜23回: 決まり文句を短くし（52 → 約29語分）、年齢は「20代後半の大人の女性」で指定、幼さは禁止語の側で抑える。
+  //   iPhone は 75 語分だけ読む（場所・タロット・月・六曜まで入る）。PC は 150 語分読むので、最後の全身の指定も効く
   const localHead = an
-    ? 'masterpiece, best quality, anime illustration, full body, 1girl, solo, mature adult woman in her late twenties, standing, front view, whole figure centered with space above her head, open eyes, fully clothed'
-    : 'RAW photo, full body shot of an elegant japanese woman in her late twenties, adult lady standing, front view, whole figure centered with space above her head, open eyes, fully clothed';
+    ? 'masterpiece, best quality, anime illustration, full body with feet visible, 1girl, solo, mature adult woman in her late twenties, standing, front view, open eyes, fully clothed'
+    : 'RAW photo, full body shot with feet visible, elegant japanese woman in her late twenties standing, front view, open eyes, fully clothed';
   const localEnd = 'full body shot from head to toe, feet visible, standing on the ground';
   const localHeadUpper = an
     ? 'masterpiece, best quality, anime illustration, 1girl, adult woman, upper body, womanly figure, beautiful detailed face, beautiful detailed open eyes, looking at viewer, fully clothed'

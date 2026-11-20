@@ -61,8 +61,19 @@ function loadScript(src) {
   return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('部品を読み込めません')); document.head.appendChild(s); });
 }
 (async () => {
-  const raw = lsGet(REQ);
-  // 依頼が無い（強制終了のあとの読み込み直しなど）→ アプリに戻り、アプリ側が強制終了を判定する
+  let raw = lsGet(REQ), resumed = null;
+  // 依頼が無いのに実行中の印がある＝生成の途中で強制終了し、iPhone がこの画面を読み込み直した。
+  //   落ちたあとの新しい画面では通ることが多い（実機）ので、同じ依頼で1回だけ自動でやり直す。
+  //   保存済みの結果がある時（顔の描き直し待ちなど）はやり直さない。2回目も落ちたらアプリに戻り、アプリ側が強制終了を判定する
+  if (!raw) {
+    let run = null, done = null;
+    try { run = JSON.parse(lsGet(RUN) || 'null'); done = JSON.parse(lsGet('lg_local_req_done') || 'null'); } catch (e) {}
+    let res = null; try { res = JSON.parse(lsGet(RES) || 'null'); } catch (e) {}
+    if (run && done && !done.autoRetried && !(res && res.ok) && Date.now() - (run.t || 0) < 10 * 60e3 && Date.now() - (done.t || 0) < 20 * 60e3) {
+      resumed = run.phase || '?';
+      raw = JSON.stringify(Object.assign({}, done, { t: Date.now(), autoRetried: true }));
+    }
+  }
   if (!raw) { back(); return; }
   lsSet(REQ, null);                    // 読み込み直しで二重に始めない
   lsSet('lg_local_req_done', raw);     // アプリ側が表示に使う（指示文・シードなど）
@@ -80,7 +91,7 @@ function loadScript(src) {
   const ac = new AbortController();
   $('cancelBtn').onclick = () => { ac.abort(); setStage('中止しています…'); };
   mark('start');
-  gl('生成専用の画面で開始');
+  gl(resumed ? `強制終了（${resumed}）のあと、自動でもう一度` : '生成専用の画面で開始');
   const tag = q.safe ? '（安全設定）' : '';
   try {
     await loadScript('assets/ai/local-gen.js?v=' + AV);

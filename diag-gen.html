@@ -55,7 +55,7 @@
   <p class="lead"><a href="index.html?memtest=1" style="display:inline-block;padding:10px 14px;border:1px solid var(--gold, #c9a227);border-radius:10px;text-decoration:none">📏 アプリ本体のメモリ余裕を測る（アプリが開き、わざと落とします）</a></p>
   <div id="sections"></div>
   <button id="copyBtn">📋 結果をコピー</button>
-  <p class="lead"><a href="index.html">← アプリに戻る</a>　<a href="diag.html">📱 実機診断（基本）</a></p>
+  <p class="lead"><a href="index.html" onclick="location.replace(this.href);return false;">← アプリに戻る</a>　<a href="diag.html">📱 実機診断（基本）</a></p>
 </div>
 <div id="toast"></div>
 
@@ -107,13 +107,13 @@
      Dawn 計測: 2回目以降の実行で新しく作るバッファは 4個・約0MB（以前は1回 94MB・1513個）。捨てた分が返るまでの時間差に左右されなくなる
    - URL パラメータ（動作確認用）: ?tier=M|S&ep=webgpu|wasm&sizes=128x128&pace=0&cap=96&vae=100&buf=lazyRelease（buf は GPU バッファの方式・pace=0 で待ち合わせなし・cap は余裕の測定の上限MB・vae は仕上げを分割する大きさ）
    ════════════════════════════════════════════════════════════ */
-const KEY = 'lgo_diag_gen_v13';
+const KEY = 'lgo_diag_gen_v14';
 const MB = 1048576;
 const Q = new URLSearchParams(location.search);
 const EP = Q.get('ep') || 'webgpu';
 const ROOT_DIR = 'lgo-localgen';
 const COMP = 'unet';
-const AV = '2026-11-17c';
+const AV = '2026-11-17d';
 // アプリ本体と同じ種類の指示文（全身の構図＋顔の描き直し）
 const PROMPT = 'RAW photo, wide shot, full body from head to toe, a beautiful 25 year old japanese woman standing facing the camera, front view, womanly curvy figure, long legs, wearing shoes, open eyes looking at viewer, sharp focus, fully clothed, long black hair, gentle smile, floral dress, flower garden',
   NEG = 'nude, nsfw, revealing, cleavage, child, teen, flat chest, closed eyes, from behind, back view, looking away, cropped, close-up, cut off legs, painting, illustration, cartoon, anime, deformed face, bad hands, bad anatomy, blurry, low quality',
@@ -143,7 +143,7 @@ const STEPS = [
   ...MEASURE.map((sz, i) => ({ id: 'm' + sz[0], title: `${6 + i}. メモリ測定: 描画 ${SZ(sz).join('×')} を2回のあと（測定後に落ちるのは正常）`,
     run: s => stepDiag(s, Object.assign(U(sz, 2), { headroom: { when: 'run', capMB: CAP } })), reloadBefore: true, measure: true })),
 ];
-let state = load() || { v: 13, inProgress: false, steps: {} };
+let state = load() || { v: 14, inProgress: false, steps: {} };
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -227,7 +227,9 @@ async function stepProbe(s) {
   await useLocalGen();
   const p = await LOCAL_GEN.workerProbe();
   s.data = { 'アプリ側の版': LOCAL_GEN.version || '古い版', 'Worker の版': p.version || '古い版', 'Worker で WebGPU': p.gpu ? 'あり' : 'なし',
-             'GPU 取得': p.adapter ? 'OK' : '—', '半精度(f16)': p.f16 ? 'OK' : '—', '同期ファイル読み込み': p.sync ? 'OK' : 'なし' };
+             'GPU 取得': p.adapter ? 'OK' : '—', '半精度(f16)': p.f16 ? 'OK' : '—', '同期ファイル読み込み': p.sync ? 'OK' : 'なし',
+             // 第19回: 開いた直後の1回目だけ落ちる件。アプリの画面が「戻る」用に裏で残っていると、同じメモリ枠を使う
+             '戻る履歴': history.length > 1 ? `あり（${history.length}）` : 'なし', '来た経路': document.referrer ? 'アプリから' : '直接' };
   const fresh = LOCAL_GEN.version === AV && p.version === AV;
   s.ok = p.ok && fresh;
   s.summary = !fresh ? '古い版のままです（アプリを開き直してください）' : p.ok ? `OK（版 ${AV}）` : '不可: ' + p.reason;

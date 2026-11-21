@@ -38,7 +38,9 @@
 </div>
 <script>
 'use strict';
-const AV = '2026-11-21b';
+const AV = '2026-11-21c';
+// 顔の幅が画像の幅のこの割合を超えたら「人物が大きく、足先が切れていそう」とみる（実機: 足先なし 0.10〜0.15 / PC: 足元まで 0.06〜0.085）
+const FULL_FACE_W = 0.095;
 const REQ = 'lg_local_req', RES = 'lg_local_res', RUN = 'lg_local_run', LOG = 'lg_local_log';
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
@@ -119,6 +121,13 @@ function loadScript(src) {
         else if (/^face/.test(ph)) $('bar').style.width = '90%';
       },
     });
+    // 描き直し（2回目）の結果が1回目より全身から遠い（顔が無い・顔が大きい＝人物が大きく写る）時は、1回目を使う
+    const big = w => w != null && w > FULL_FACE_W;
+    if (q.retried && q.prevFaceW != null && (r.faceStatus === 'none' || r.faceW == null || r.faceW > q.prevFaceW)) {
+      lsSet(RUN, null);
+      gl(`描き直しの結果（顔の幅 ${r.faceW == null ? 'なし' : Math.round(r.faceW * 100) + '%'}）より1回目（${Math.round(q.prevFaceW * 100)}%）の方が全身に近いので1回目を使う`);
+      back(); return;
+    }
     setStage('保存中…');
     // 画像は中身（ArrayBuffer）で保存する。iPhone の Safari では、IndexedDB に Blob のまま置くと読み出しに失敗することがある
     const pack = async b => ({ buf: await b.arrayBuffer(), type: b.type || 'image/png' });
@@ -127,13 +136,15 @@ function loadScript(src) {
     lsSet(RUN, null);
     lsSet(RES, JSON.stringify({ t: Date.now(), ok: true }));
     lsSet('lg_local_req_done', JSON.stringify(q));
-    // 顔が写っていない（頭が画面の外に切れた）時は、絵柄（シード）を変えて1回だけ描き直す。
-    //   この結果は保存済みなので、描き直しの途中で落ちてもアプリはこの画像を表示する
-    if (q.face && r.faceStatus === 'none' && !q.retried && !ac.signal.aborted) {
-      gl('完了したが顔が写っていない → 絵柄を変えてもう一度');
-      const q2 = Object.assign({}, q, { t: Date.now(), seed: ((q.seed || 1) + 7919) % 2147483647, retried: true });
+    // 全身が入っていなさそうな時は、絵柄（シード）を変えて1回だけ描き直す（この結果は保存済み。描き直しで落ちても1回目を表示）
+    //   ・顔が写っていない＝頭が画面の外に切れた
+    //   ・顔の幅が画像の幅の FULL_FACE_W を超える＝人物が大きく写り、足先が切れている（実機・PC の例から決めた目安）
+    if (q.face && !q.retried && !ac.signal.aborted && (r.faceStatus === 'none' || big(r.faceW))) {
+      const why = r.faceStatus === 'none' ? '顔が写っていない' : `人物が大きく足先が切れていそう（顔の幅 ${Math.round(r.faceW * 100)}%）`;
+      gl(`完了したが${why} → 絵柄を変えてもう一度`);
+      const q2 = Object.assign({}, q, { t: Date.now(), seed: ((q.seed || 1) + 7919) % 2147483647, retried: true, prevFaceW: r.faceStatus === 'none' ? null : r.faceW });
       lsSet(REQ, JSON.stringify(q2));
-      setStage('顔が写っていないため、絵柄を変えてもう一度描いています…');
+      setStage(r.faceStatus === 'none' ? '顔が写っていないため、絵柄を変えてもう一度描いています…' : '全身が入るように、絵柄を変えてもう一度描いています…');
       setTimeout(() => location.reload(), 300);
       return;
     }

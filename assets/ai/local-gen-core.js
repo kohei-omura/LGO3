@@ -525,7 +525,7 @@
     // ⑤ 顔の描き直し（全身の構図では顔が小さく、そのままでは崩れやすい）
     //    顔を検出 → その周りの latent を描画部品の大きさ（uw×uh）に引き伸ばす → ノイズを載せて後半の工程だけやり直す → 画像にして返す。
     //    顔は必ず1枚で描く（タイルに分けると、タイルごとに違う顔を描いて二重にぶれる。PC で確認）。失敗しても全体の画像はそのまま返す
-    let detail = null, faceStatus = face ? 'error' : 'off';   // 顔の描き直しの結果: ok / none（顔が無い）/ big / rejected / error / off
+    let detail = null, faceStatus = face ? 'error' : 'off', faceW = null;   // faceW: 見つけた顔の幅 ÷ 画像の幅（人物の写る大きさの目安）   // 顔の描き直しの結果: ok / none（顔が無い）/ big / rejected / error / off
     if (face) {
       try { detail = await refineFace(); if (detail) faceStatus = 'ok'; }
       catch (e) { if (e && e.name === 'AbortError') throw e; if (env.log) env.log('顔の描き直しを省略: ' + String(e && e.message || e).slice(0, 200)); }
@@ -533,6 +533,7 @@
     async function refineFace() {
       prog('face', 0);
       const box = face.box || await detectFace(env, rgba, W, H);   // face.box はテスト用（検出を飛ばして枠を指定）
+      if (box) faceW = +(box.w / W).toFixed(3);
       if (!box) { faceStatus = 'none'; if (env.log) env.log('顔が見つからないため描き直しなし'); return null; }
       // 小さすぎる顔（幅が画像の 1/25 未満）は、頭が画面の外に切れた絵の誤検出がほとんど（PC: 10〜13px・確度 0.65）
       if (box.w < W / 25) { faceStatus = 'none'; if (env.log) env.log(`顔が小さすぎるため描き直しなし（幅 ${Math.round(box.w)}px・確度 ${(box.score || 1).toFixed(2)}）`); return null; }
@@ -570,7 +571,7 @@
       return { rgba: frgba, width: FW, height: FH, rect: { x: x0, y: y0, w: cw, h: chh }, box };
     }
     return { rgba, width: W, height: H, steps, ms: Date.now() - t0, msPerStep: Math.round(msUnet / steps),
-             truncated: pos.truncated, tokensUsed: pos.used, detail, faceStatus };
+             truncated: pos.truncated, tokensUsed: pos.used, detail, faceStatus, faceW };
   }
 
   // ── GPU 接続の「つなぎ」 ─────────────────────────────────
@@ -591,7 +592,7 @@
     };
   }
 
-  const VERSION = '2026-11-21b';
+  const VERSION = '2026-11-21c';
   const api = { CLIPTokenizer, makeScheduler, generate, gaussian, f32ToF16Bits, toF32, keepAlive, MAX_LEN, VERSION,
                 _withSession: withSession, _fromF32: fromF32, _planTiles: planTiles, _detectFace: detectFace, _tilePos: tilePos };   // _ 付きは診断用
   root.LocalGenCore = api;

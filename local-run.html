@@ -55,7 +55,7 @@ function idbPut(val) {
       const db = o.result, tx = db.transaction('r', 'readwrite');
       tx.objectStore('r').put(val, 'last');
       tx.oncomplete = () => { db.close(); res(); };
-      tx.onerror = () => { db.close(); rej(tx.error); };
+      tx.onerror = tx.onabort = () => { db.close(); rej(tx.error || new Error('保存に失敗しました')); };   // 容量不足は abort だけが来る
     };
   });
 }
@@ -156,7 +156,7 @@ function loadScript(src) {
     setStage('保存中…');
     // 画像は中身（ArrayBuffer）で保存する。iPhone の Safari では、IndexedDB に Blob のまま置くと読み出しに失敗することがある
     const pack = async b => ({ buf: await b.arrayBuffer(), type: b.type || 'image/png' });
-    await idbPut({ img: await pack(r.blob), label: r.label, width: r.width, height: r.height,
+    await idbPut({ img: await pack(r.blob), label: r.label, width: r.width, height: r.height, seed: q.seed,
       detail: r.detail && r.detail.blob ? { img: await pack(r.detail.blob), rect: r.detail.rect, width: r.detail.width, height: r.detail.height } : null });
     lsSet(RUN, null);
     lsSet(RES, JSON.stringify({ t: Date.now(), ok: true }));
@@ -179,7 +179,8 @@ function loadScript(src) {
     const aborted = ac.signal.aborted || (e && e.name === 'AbortError');
     gl(aborted ? '中止' : 'エラー: ' + String(e && e.message || e).slice(0, 300));
     // 描き直し（2回目）で失敗・中止した時は、保存済みの1回目の画像をそのまま表示する
-    if (q.retried && (JSON.parse(lsGet(RES) || '{}') || {}).ok) gl('1回目の画像を使う');
+    let prevOk = false; try { prevOk = !!(JSON.parse(lsGet(RES) || '{}') || {}).ok; } catch (e2) {}
+    if (q.retried && prevOk) gl('1回目の画像を使う');
     else lsSet(RES, JSON.stringify({ t: Date.now(), ok: false, aborted, error: String(e && e.message || e).slice(0, 200) }));
   }
   back();

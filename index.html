@@ -2477,7 +2477,8 @@ function _genOneVariation(seed, pd, onOk, onErr) {
   };
   // 📴 端末内（常に使う設定、またはオフライン時）
   const mode = getLocalMode();
-  if(localAvailable() && pd.mode !== 'img2img' && mode !== 'off' && (mode === 'always' || !navigator.onLine)) {
+  // iPhone / iPad はアプリの画面で端末内生成をしない（描画の1工程目で落ちるため、生成は専用画面で行う）。一時停止中も使わない
+  if(localAvailable() && pd.mode !== 'img2img' && mode !== 'off' && (mode === 'always' || !navigator.onLine) && !localCrashPaused() && !localOwnPage()) {
     AI_SR.release();
     LOCAL_GEN.generate({ prompt: pd.localPromptNoFace || pd.localPrompt || pd.prompt, negative: pd.localNegativeNoFace || pd.localNegative || pd.negative, seed, quality: getImgQuality(), signal: _varAbort && _varAbort.signal })
       .then(r => onOk(URL.createObjectURL(r.blob), true, '端末内 ' + r.label))
@@ -2763,6 +2764,7 @@ function finishWithImage(src, winner, promptData, token) {
 //   境目が見えないよう、楕円のぼかしマスクで混ぜる
 let _faceDetail = null;
 function setFaceDetail(srcUrl, d) {
+  if(_faceDetail && _faceDetail.img && /^blob:/.test(_faceDetail.img.src)) { try { URL.revokeObjectURL(_faceDetail.img.src); } catch(e) {} }
   _faceDetail = null;
   if(!d || !d.blob) return;
   const img = new Image();
@@ -2958,7 +2960,7 @@ function generateImage(promptData, seed) {
     loading.classList.add('hidden');
     errorDiv.innerHTML = `
       <div class="error-icon">🌙</div>
-      <div class="error-msg">${msg || 'AIの星が混み合っています'}<br>
+      <div class="error-msg">${esc(msg || 'AIの星が混み合っています')}<br>
         <small>「再生成」を押すか、しばらく後に開き直すと回収されます</small></div>`;
     errorDiv.style.display = 'flex';
     // pending はあえて残す（次回起動/復帰時に回収を試みる）
@@ -2980,7 +2982,8 @@ function generateImage(promptData, seed) {
   //   📴端末内: 「常に使う」なら最初に、「自動」でオフラインなら最初に（通信が要らない）
   //   ※ 一定時間で終わらなければ Horde を保険として並走させる（端末内の実行中は止める）
   const localMode  = getLocalMode();
-  const localReady = localAvailable() && promptData.mode !== 'img2img' && localMode !== 'off' && !localCrashPaused();
+  const localReady = localAvailable() && promptData.mode !== 'img2img' && localMode !== 'off' && !localCrashPaused() && !_skipLocalOnce;
+  _skipLocalOnce = false;
   let localTried = false;
   const tryLocal = (next) => {
     if(done) return;
@@ -3017,7 +3020,7 @@ function generateImage(promptData, seed) {
       lsSet(LOCAL_REQ_KEY, JSON.stringify({ t: Date.now(), prompt: lp,
         negative: (fullBody ? promptData.localNegative : promptData.localNegativeNoFace || promptData.localNegative) || promptData.negative,
         seed, quality: getImgQuality(), tier: safe.tier, size: safe.size, safe: !!tag,
-        face: useFace ? { prompt: promptData.localFacePrompt } : null, promptData }));
+        face: useFace ? { prompt: promptData.localFacePrompt } : null, promptData, dateKey }));
       setStage('📴 端末内生成の画面に切り替えています…' + tag);
       setTimeout(() => location.replace('local-run.html'), 50);
       return;
@@ -3209,7 +3212,7 @@ function resumePendingGeneration() {
     if(shown && shown.classList.contains('loaded')) {
       showToast('前回の生成は回収できませんでした（表示中の画像はそのままです）');
     } else if(errorDiv) {
-      errorDiv.innerHTML = `<div class="error-icon">🌙</div><div class="error-msg">${msg||'前回の生成を回収できませんでした'}<br><small>「再生成」を押してください</small></div>`;
+      errorDiv.innerHTML = `<div class="error-icon">🌙</div><div class="error-msg">${esc(msg||'前回の生成を回収できませんでした')}<br><small>「再生成」を押してください</small></div>`;
       errorDiv.style.display = 'flex';
     }
     clearPending();
@@ -3514,7 +3517,7 @@ function generateImg2ImgWithHorde(promptData, strength, sourceBase64) {
     stopAll(); isGenerating = false;
     regenBtn.disabled = false;
     loading.classList.add('hidden');
-    errorDiv.innerHTML = `<div class="error-icon">🌙</div><div class="error-msg">${msg||'生成失敗'}<br><small>再試行、または開き直すと回収されます</small></div>`;
+    errorDiv.innerHTML = `<div class="error-icon">🌙</div><div class="error-msg">${esc(msg||'生成失敗')}<br><small>再試行、または開き直すと回収されます</small></div>`;
     errorDiv.style.display = 'flex';
   };
 
@@ -3621,6 +3624,8 @@ const LOCAL_PHASE_LABEL = { start: '準備', 'text_encoder:load': '文章部品�
   'warm:unet:load': '描画の下準備', 'warm:unet:run': '描画の下準備', 'unet:load': '描画部品の読込', 'unet:run': '描画（1工程目）', unet: '描画', 'vae_decoder:load': '仕上げ部品の読込', 'vae_decoder:run': '仕上げ', vae: '仕上げ', face: '顔の描き直し' };
 // ── 端末内生成の専用画面（local-run.html）との受け渡し ──
 const LOCAL_REQ_KEY = 'lg_local_req', LOCAL_RES_KEY = 'lg_local_res';
+// 専用画面での端末内生成が失敗して戻った時、次の1回は端末内を飛ばして通信の生成に進む（画面内の生成で next() に進んでいたのと同じ）
+let _skipLocalOnce = false;
 // iPhone / iPad は専用画面で生成する（lg_local_ownpage = '1' / '0' で切り替え可能。テスト用）
 function localOwnPage() {
   const o = lsGet('lg_local_ownpage');
@@ -3661,7 +3666,15 @@ async function resumeLocalResult() {
   const drop = () => { lsSet(LOCAL_RES_KEY, null); lsSet('lg_local_req_done', null); localResultDb('readwrite', st => { st.delete('last'); }); };
   if(!r || Date.now() - (r.t || 0) > 30 * 60e3) { drop(); return false; }
   if(!r.ok) {
+    let q0 = null; try { q0 = JSON.parse(lsGet('lg_local_req_done') || 'null'); } catch(e) {}
     drop(); localRunClear(false);
+    if(!r.aborted && q0 && q0.promptData && currentDiv) {
+      // 失敗（中止ではない）→ 通信での生成に進む（端末内はこの1回だけ飛ばす。画面内の生成で次の経路に進んでいたのと同じ）
+      showToast('端末内生成に失敗したため、通信での生成に切り替えます: ' + (r.error || ''));
+      _skipLocalOnce = true; currentPromptData = q0.promptData;
+      generateImage(q0.promptData, q0.seed);
+      return true;
+    }
     showToast(r.aborted ? '端末内生成を中止しました' : '端末内生成に失敗しました: ' + (r.error || ''));
     return false;
   }
@@ -3681,10 +3694,15 @@ async function resumeLocalResult() {
   localLogAppend(`結果を読み込み（${Math.round(blob.size / 1024)}KB${v.detail ? '・顔あり' : ''}）`);
   localRunClear(true); _heavyEndAt = Date.now();
   const promptData = q.promptData;
+  // 日付をまたいで戻った時は、生成を始めた日の画像として保存する（resumePendingGeneration と同じ扱い）
+  if(q.dateKey && currentDiv) {
+    const n = currentDiv.now, today = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+    if(q.dateKey !== today) promptData._recovered = { date: q.dateKey, recovered: true, score: null, rokuyo: null };
+  }
   const loading = document.getElementById('loadingOverlay'), img = document.getElementById('mainImg');
   const regenBtn = document.getElementById('regenBtn'), hint = document.getElementById('loadingPromptHint');
   stopAll(); resetHordeJob(); _clearVariations();
-  _lastSeed = q.seed; currentPromptData = promptData;
+  _lastSeed = v.seed != null ? v.seed : q.seed; currentPromptData = promptData;   // 表示する画像のシード（描き直しで1回目を使った時も正しく）
   if(loading) loading.classList.remove('hidden');
   if(img) { img.classList.remove('loaded'); img.removeAttribute('src'); img.onload = null; img.onerror = null; }
   setActionsEnabled(false); if(regenBtn) regenBtn.disabled = true;
@@ -3911,10 +3929,11 @@ async function init() {
   const d = currentDiv.now;
   const todayKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
+  // 端末内生成の専用画面から戻った → 履歴の読み込みに失敗しても結果は表示する
+  try { if(await resumeLocalResult()) return; } catch(e) { console.warn('[LGO] 端末内の結果の表示に失敗:', e); }
   try {
     const all = await loadHistory();
     // ① 中断された生成があれば最優先で回収（再起動/復帰対応）
-    if(await resumeLocalResult()) return;   // 端末内生成の専用画面から戻った
     if(resumePendingGeneration()) return;
     const todayEntry = all.find(h => h.date === todayKey && h.mode === 'oracle');
     if(!todayEntry || !todayEntry.imageData) {

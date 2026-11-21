@@ -33,7 +33,7 @@
   <p id="stage">準備中…</p>
   <p id="sec"></p>
   <div class="bar"><i id="bar"></i></div>
-  <p class="lead">メモリを空けるため、生成の間だけこの画面に切り替えています。<br>終わると自動でアプリに戻ります。画面はつけたままにしてください。</p>
+  <p class="lead">メモリを空けるため、生成の間だけこの画面に切り替えています。<br>終わると自動でアプリに戻ります。<span id="awake">画面はつけたままにしてください。</span></p>
   <button id="cancelBtn">中止してアプリに戻る</button>
 </div>
 <script>
@@ -94,7 +94,20 @@ function loadScript(src) {
   const t0 = Date.now();
   let stage = '準備中…';
   const setStage = t => { stage = t; $('stage').textContent = t; };
-  setInterval(() => { $('sec').textContent = Math.round((Date.now() - t0) / 1000) + '秒'; }, 1000);
+  // 経過時間と残りの目安。描画（unet）の速さから、仕上げ（描画の約0.2倍）・顔の描き直し（約0.65倍）を見積もる（実機の記録から）
+  let tUnet = 0, eta = null;
+  const fmt = sec => sec >= 60 ? `${Math.floor(sec / 60)}分${String(Math.round(sec % 60)).padStart(2, '0')}秒` : `${Math.round(sec)}秒`;
+  setInterval(() => {
+    const el = (Date.now() - t0) / 1000;
+    $('sec').textContent = '経過 ' + fmt(el) + (eta != null ? `・残り 約${fmt(Math.max(0, eta - (Date.now() - t0) / 1000))}` : '');
+  }, 1000);
+  // 生成の間は画面を消さない（画面が消えると GPU の処理が止まり、数分待たされることがあった）
+  let wake = null;
+  const keepAwake = async () => {
+    try { if ('wakeLock' in navigator && document.visibilityState === 'visible' && !(wake && !wake.released)) { wake = await navigator.wakeLock.request('screen'); $('awake').textContent = '生成の間は画面が自動で消えないようにしています。'; } } catch (e) {}
+  };
+  keepAwake();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
   const ac = new AbortController();
   $('cancelBtn').onclick = () => { ac.abort(); setStage('中止しています…'); };
   mark('start');
@@ -123,8 +136,14 @@ function loadScript(src) {
                 : ph === 'text' || ph === 'text_encoder:run' ? '文章を解析中…'
                 : /^warm/.test(ph) ? '描画の下準備中…'
                 : '仕上げ中…') + tag);
-        if (ph === 'unet') $('bar').style.width = Math.round(f * 80) + '%';
-        else if (/^face/.test(ph)) $('bar').style.width = '90%';
+        // 全体の進み具合: 描画 0〜55% / 仕上げ 55〜65% / 顔の描き直し 65〜100%（顔なしは描画 0〜85%・仕上げ 85〜100%）
+        const W1 = q.face ? 55 : 85, W2 = q.face ? 65 : 100;
+        if (ph === 'unet:run' && !tUnet) tUnet = Date.now();
+        if (ph === 'unet') {
+          $('bar').style.width = Math.round(f * W1) + '%';
+          if (tUnet && f >= 0.08 && f < 1) { const per = (Date.now() - tUnet) / 1000 / f; eta = (Date.now() - t0) / 1000 + per * (1 - f) + per * (0.2 + (q.face ? 0.65 : 0)); }
+        } else if (ph === 'vae') $('bar').style.width = Math.round(W1 + f * (W2 - W1)) + '%';
+        else if (ph === 'face') $('bar').style.width = Math.round(65 + f * 35) + '%';
       },
     });
     // 描き直し（2回目）の結果が1回目より全身から遠い（顔が無い・顔が大きい＝人物が大きく写る）時は、1回目を使う

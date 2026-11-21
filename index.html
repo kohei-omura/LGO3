@@ -97,10 +97,11 @@
   .header-subtitle { font-family: 'Cinzel Decorative', serif; font-size: .62rem; letter-spacing: .3em; color: var(--gold); margin-bottom: 10px; opacity: .85; }
   .header-title { font-family: 'Shippori Mincho', serif; font-size: 1.7rem; font-weight: 700; background: linear-gradient(135deg, var(--gold) 0%, var(--rose) 50%, var(--violet) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1.3; margin-bottom: 6px; }
   .header-date { font-size: .75rem; color: var(--muted); letter-spacing: .1em; }
-  .fortune-bar { background: var(--glass); border: 1px solid var(--border); border-radius: 16px; padding: 14px 18px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; backdrop-filter: blur(8px); }
+  /* 6項目を3列×2段の均等な格子に（旧版は折り返しで「運気」だけが2段目に残っていた） */
+  .fortune-bar { background: var(--glass); border: 1px solid var(--border); border-radius: 16px; padding: 14px 14px; margin-bottom: 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; align-items: start; backdrop-filter: blur(8px); }
   .fb-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   .fb-label { font-size: .58rem; color: var(--muted); letter-spacing: .08em; }
-  .fb-value { font-size: .8rem; font-weight: 700; color: var(--text); }
+  .fb-value { font-size: .8rem; font-weight: 700; color: var(--text); text-align: center; font-variant-numeric: tabular-nums; }
   .fb-value.gold { color: var(--gold); }
   .fb-value.rose { color: var(--rose); }
   .fb-value.violet { color: var(--violet); }

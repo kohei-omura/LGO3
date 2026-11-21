@@ -83,7 +83,12 @@ function loadScript(src) {
   if (!q || Date.now() - (q.t || 0) > 10 * 60e3) { back(); return; }
   let glog = null; try { glog = JSON.parse(lsGet(LOG) || 'null'); } catch (e) {}
   if (!glog || !Array.isArray(glog.lines)) glog = { t: Date.now(), lines: [] };
-  const gl = text => { glog.lines.push(((Date.now() - glog.t) / 1000).toFixed(1) + '秒 ' + text); if (glog.lines.length > 80) glog.lines.splice(10, 1); lsSet(LOG, JSON.stringify(glog)); };
+  // 記録は 160 行まで（超えたら古い進み具合の行から消す。描き直しの理由などの行は残す）
+  const gl = text => {
+    glog.lines.push(((Date.now() - glog.t) / 1000).toFixed(1) + '秒 ' + text);
+    while (glog.lines.length > 160) { const i = glog.lines.findIndex((l, k) => k >= 10 && /秒 (unet|vae|face) \d+%$/.test(l)); glog.lines.splice(i > 0 ? i : 10, 1); }
+    lsSet(LOG, JSON.stringify(glog));
+  };
   let lastPh = '';
   const mark = ph => lsSet(RUN, JSON.stringify({ t: Date.now(), phase: ph, safe: !!q.safe, repeat: false }));
   const t0 = Date.now();
@@ -107,7 +112,8 @@ function loadScript(src) {
       tier: q.tier, size: q.size, face: q.face,
       onLog: text => gl('［' + text + '］'),
       onProgress: (ph, f) => {
-        gl(ph + (f > 0 ? ' ' + Math.round(f * 100) + '%' : ''));
+        const pc = Math.round(f * 100);
+        if (!(f > 0 && f < 1 && /^(unet|vae|face)$/.test(ph) && Math.round(pc / 4) % 5)) gl(ph + (f > 0 ? ' ' + pc + '%' : ''));   // 進み具合は 20% ごと
         const mk = /^face/.test(ph) ? 'face' : ph;
         if (mk !== lastPh) { lastPh = mk; mark(mk); }      // どの段階で落ちたかを記録（アプリ側が読む）
         setStage((/^face/.test(ph) ? `顔を描き直し中… ${ph === 'face' ? Math.round(f * 100) + '%' : ''}`
